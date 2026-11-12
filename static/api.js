@@ -541,3 +541,11 @@ function mockRequest(method, path, body) {
     }, CONFIG.MOCK_DELAY_MS);
   });
 }
+
+/* Explicit deletions; owner/role checks are performed by the Rust server. */
+API.deleteSummary = function (id) { return request('DELETE', '/meetings/' + encodeURIComponent(id) + '/summary'); };
+API.deleteTask = function (id) { return request('DELETE', '/tasks/' + encodeURIComponent(id)); };
+API.deleteDialog = function (id) { return request('DELETE', '/assistant/dialogs/' + encodeURIComponent(id)); };
+API.deleteAllDialogs = function () { return request('DELETE', '/assistant/dialogs'); };
+API.deleteNotification = function (id) { return request('DELETE', '/notifications/' + encodeURIComponent(id)); };
+API.deleteAllNotifications = function () { return request('DELETE', '/notifications'); };

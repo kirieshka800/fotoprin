@@ -15,7 +15,7 @@ function syncCompose() {
 function renderDialogs() {
   var html = '';
   dialogs.forEach(function (d) {
-    html += '<button class="dialog-item ' + (current && d.id === current.id ? 'active' : '') + '" data-id="' + esc(d.id) + '"><b>' + esc(d.title) + '</b><small>' + esc(formatDateTime(d.updatedAt)) + '</small></button>';
+    html += '<div class="dialog-entry"><button class="dialog-item ' + (current && d.id === current.id ? 'active' : '') + '" data-id="' + esc(d.id) + '"><b>' + esc(d.title) + '</b><small>' + esc(formatDateTime(d.updatedAt)) + '</small></button><button class="icon-btn" data-delete-dialog="' + esc(d.id) + '" aria-label="Удалить диалог: ' + esc(d.title) + '" title="Удалить диалог">×</button></div>';
   });
   $('#dialogs').innerHTML = html;
 }
@@ -54,6 +54,21 @@ async function openDialog(id) {
     $('#chat').innerHTML = '<p class="muted">Не удалось открыть диалог.</p><button class="btn" data-retry-open="' + esc(id) + '">Повторить</button>';
     showError(error);
   }
+}
+async function afterDialogsDeleted(id) {
+  await refreshDialogs();
+  if (!id || (current && current.id === id)) {
+    ++dialogLoad; current = null;
+    if (dialogs.length) { await openDialog(dialogs[0].id); }
+    else { $('#chat-title').textContent = 'Диалоги удалены'; $('#chat').innerHTML = '<div class="assistant-empty"><h2>Здесь пока нет диалогов</h2><p>Нажмите «Новый диалог», чтобы начать разговор.</p></div>'; syncCompose(); }
+  }
+}
+function removeDialog(id) {
+  if (sending && pendingDialog === id) { showError(new Error('Дождитесь ответа перед удалением диалога')); return; }
+  var d=dialogs.find(function (item) { return item.id===id; });
+  confirmRemoval('Удалить диалог?', '«'+(d ? d.title : 'Диалог')+'»\nИстория сообщений и предложения будут удалены. Уже выполненные задачи и смены сохранятся.', async function () {
+    await API.deleteDialog(id); await afterDialogsDeleted(id); toast('Диалог удалён');
+  });
 }
 function safeLink(href) {
   // Allow only this application's pages, never model-provided protocols or hosts.
@@ -171,7 +186,8 @@ document.addEventListener('DOMContentLoaded', async function () {
   syncCompose();
   API.getMe().then(function (me) { window.ME_NAME = me.name; }).catch(function () {});
   $('#context-note').textContent = 'Задачи · график · встречи · команда · уведомления · настройки. История хранится в вашей учётной записи.';
-  $('#dialogs').addEventListener('click', function (event) { var item = event.target.closest('.dialog-item'); if (item) { openDialog(item.dataset.id); } });
+  $('#dialogs').addEventListener('click', function (event) { var remove=event.target.closest('[data-delete-dialog]'); if(remove){event.stopPropagation();removeDialog(remove.dataset.deleteDialog);return;} var item = event.target.closest('.dialog-item'); if (item) { openDialog(item.dataset.id); } });
+  $('#clear-dialogs').addEventListener('click', function () { if(sending){showError(new Error('Дождитесь ответа перед удалением диалогов'));return;} confirmRemoval('Удалить все диалоги?', 'Все ваши диалоги, сообщения и предложения будут удалены. Рабочие задачи, встречи и смены сохранятся.',async function(){await API.deleteAllDialogs();await afterDialogsDeleted(null);toast('Диалоги удалены');}); });
   $('#new-dialog').addEventListener('click', async function () {
     var button = $('#new-dialog');
     button.disabled = true;

@@ -18,7 +18,7 @@
 <div class="page-head">
   <div><div class="eyebrow"><a href="meetings.html" style="display:flex;gap:8px;align-items:center"><svg class="i" viewBox="0 0 24 24" style="width:13px;height:13px"><path d="M19 12H5M11 6l-6 6 6 6"/></svg> Все встречи</a></div>
     <h1 id="title" style="font-size:30px">&nbsp;</h1><p class="page-sub" id="meta" style="font-size:13px">&nbsp;</p></div>
-  <div class="head-actions" id="head-actions"><button class="btn" id="export">Экспорт</button><button class="btn primary" id="share">Поделиться</button></div>
+  <div class="head-actions" id="head-actions"><button class="btn hidden" id="delete-summary" data-manager-delete>Удалить саммари</button><button class="btn hidden" id="delete-meeting" data-manager-delete>Удалить встречу</button><button class="btn" id="export">Экспорт</button><button class="btn primary" id="share">Поделиться</button></div>
 </div>
 <div id="state-box" class="card status-card hidden"></div>
 <div id="content" class="hidden">
@@ -82,7 +82,7 @@ async function loadMeeting() {
     $('#meta').textContent = metaLine();
     if (meeting.status === 'error') { showFailed(meeting.errorMessage); return; }
     if (meeting.status !== 'ready') { showProcessing(); return; }
-    showReady();
+    showReady(); configureDeletionControls();
   } catch (error) {
     $('#title').textContent = 'Встреча не найдена';
     $('#head-actions').classList.add('hidden');
@@ -104,7 +104,7 @@ function showProcessing() {
   watchMeeting(meeting.id, function (progress) { box.innerHTML = processingHtml(progress); }, function () { window.location.reload(); }, function () { API.getMeeting(meeting.id).then(function (fresh) { showFailed(fresh.errorMessage); }).catch(function () { showFailed(''); }); });
 }
 function showFailed(message) {
-  $('#head-actions').classList.add('hidden');
+  $('#head-actions').classList.remove('hidden'); $('#export').classList.add('hidden'); $('#share').classList.add('hidden'); $('#delete-summary').disabled=true;configureDeletionControls();
   var box = $('#state-box');
   box.classList.remove('hidden');
   box.innerHTML = errorHtml(message || 'Не удалось обработать запись.', 'Не получилось собрать саммари', meeting.audioUrl);
@@ -129,12 +129,14 @@ function showReady() {
   $('#wave').setAttribute('tabindex',meeting.audioUrl ? '0' : '-1');
   if (meeting.audioUrl) { $('#audio').src = meeting.audioUrl; $('#audio').load(); }
   paintPlayer();
-  if (meeting.audioUrl && meeting.errorMessage && !(meeting.transcript || []).length) {
+  if (meeting.summary && meeting.audioUrl && meeting.errorMessage && !(meeting.transcript || []).length) {
     $('#content .chips').firstElementChild.textContent='Саммари по заметкам';
   }
 }
 
 function renderSummary() {
+  $('#delete-summary').disabled=!meeting.summary;
+  if(!meeting.summary){$('#tab-summary').innerHTML='<div class="empty"><h3>Саммари отсутствует</h3><p>Запись, расшифровка и задачи сохранены.</p></div>';$('#content .chips').firstElementChild.textContent='Без саммари';return;}
   var summary = meeting.summary || { highlight: '', topics: [], decisions: [], source: '' };
   var html = '<div class="highlight"><small>Главное за 30 секунд</small><p>' + esc(summary.highlight) + '</p></div>';
   if (summary.topics.length) {
@@ -258,6 +260,8 @@ function seekTo(seconds) {
 function seekToText(text) {var parts=text.split(':').map(Number),seconds=0;for(var i=0;i<parts.length;i++){seconds=seconds*60+parts[i];}seekTo(seconds);if(!playing){setPlaying(true);}}
 
 document.addEventListener('DOMContentLoaded', function () {
+  $('#delete-summary').addEventListener('click',function(){if(!meeting){return;}confirmRemoval('Удалить саммари?', 'Саммари встречи «'+meeting.title+'» будет удалено. Встреча, аудио, расшифровка и задачи сохранятся.',async function(){await API.deleteSummary(meeting.id);window.location.reload();});});
+  $('#delete-meeting').addEventListener('click',function(){if(!meeting){return;}confirmRemoval('Удалить встречу?', 'Встреча «'+meeting.title+'», саммари, расшифровка и аудиофайл будут удалены. Связанные задачи сохранятся.',async function(){await API.deleteMeeting(meeting.id);window.location.href='meetings.html';});});
   loadMeeting();
   $('#play').addEventListener('click', function () { setPlaying(!playing); });
   var audio=$('#audio');

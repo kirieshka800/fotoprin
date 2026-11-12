@@ -521,28 +521,34 @@ pub async fn meeting_status(
 }
 
 // DELETE /api/meetings/:id
-pub async fn delete_meeting(
-    State(state): State<AppState>,
-    Path(id): Path<i64>,
-) -> Result<Json<Value>, ResponseError> {
-    let audio_file: Option<Option<String>> =
-        sqlx::query_scalar("SELECT audio_file FROM meetings WHERE id = $1")
-            .bind(id)
-            .fetch_optional(&state.db)
-            .await
-            .map_err(db_error)?;
-    if let Some(Some(name)) = audio_file {
-        let _ = std::fs::remove_file(format!("{}/{}", UPLOADS_DIR, name));
-    }
-    let result = sqlx::query("DELETE FROM meetings WHERE id = $1")
-        .bind(id)
-        .execute(&state.db)
-        .await
-        .map_err(db_error)?;
-    if result.rows_affected() == 0 {
-        return Err(create_error_response(StatusCode::NOT_FOUND, "Встреча не найдена"));
-    }
-    Ok(Json(json!({ "ok": true })))
+fn authorize_deletion(auth:&crate::auth::CurrentUser)->Result<(),ResponseError>{
+    if auth.role=="admin" || auth.role=="manager"{Ok(())}else{Err(create_error_response(StatusCode::FORBIDDEN,"Удаление доступно только руководителю"))}
+}
+pub async fn delete_summary(State(state):State<AppState>,axum::Extension(auth):axum::Extension<crate::auth::CurrentUser>,Path(id):Path<i64>)->Result<Json<Value>,ResponseError>{
+    authorize_deletion(&auth)?;
+    let mut tx=state.db.begin().await.map_err(db_error)?;
+    let status:Option<String>=sqlx::query_scalar("SELECT status FROM meetings WHERE id=$1 FOR UPDATE").bind(id).fetch_optional(&mut *tx).await.map_err(db_error)?;
+    let status=status.ok_or_else(||create_error_response(StatusCode::NOT_FOUND,"Встреча не найдена"))?;
+    if status=="processing"{return Err(create_error_response(StatusCode::CONFLICT,"Дождитесь завершения обработки встречи"));}
+    sqlx::query("DELETE FROM summaries WHERE meeting_id=$1").bind(id).execute(&mut *tx).await.map_err(db_error)?;
+    tx.commit().await.map_err(db_error)?;Ok(Json(json!({"ok":true})))
+}
+pub async fn delete_meeting(State(state):State<AppState>,axum::Extension(auth):axum::Extension<crate::auth::CurrentUser>,Path(id):Path<i64>)->Result<Json<Value>,ResponseError>{
+    authorize_deletion(&auth)?;
+    let mut tx=state.db.begin().await.map_err(db_error)?;
+    // FK cleanup touches tasks and schedule_weeks; lock in the same order as
+    // assistant confirmation before locking/deleting the meeting row.
+    sqlx::query("LOCK TABLE tasks,schedule_weeks,meetings IN ROW EXCLUSIVE MODE").execute(&mut *tx).await.map_err(db_error)?;
+
+    let row=sqlx::query("SELECT audio_file,status FROM meetings WHERE id=$1 FOR UPDATE").bind(id).fetch_optional(&mut *tx).await.map_err(db_error)?.ok_or_else(||create_error_response(StatusCode::NOT_FOUND,"Встреча не найдена"))?;
+    if row.get::<String,_>("status")=="processing"{return Err(create_error_response(StatusCode::CONFLICT,"Дождитесь завершения обработки встречи"));}
+    let audio:Option<String>=row.get("audio_file");
+    sqlx::query("DELETE FROM meetings WHERE id=$1").bind(id).execute(&mut *tx).await.map_err(db_error)?;
+    tx.commit().await.map_err(db_error)?;
+    if let Some(file)=audio {if file.starts_with(&format!("meeting-{id}.")) && file.chars().all(|c|c.is_ascii_alphanumeric() || c=='-' || c=='.') && !file.contains(".."){
+        if let Err(e)=tokio::fs::remove_file(std::path::Path::new(UPLOADS_DIR).join(file)).await{if e.kind()!=std::io::ErrorKind::NotFound{eprintln!("Не удалось удалить запись встречи {id}: {e}");}}
+    }}
+    Ok(Json(json!({"ok":true})))
 }
 
 // ============================================================

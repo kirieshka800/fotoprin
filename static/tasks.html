@@ -71,14 +71,14 @@ function renderTable(items) {
     $('#empty-new').addEventListener('click', openNewTask);
     return;
   }
-  var html = '<table class="table"><thead><tr><th>Задача</th><th>Ответственный</th><th>Срок</th><th>Статус</th><th>Источник</th></tr></thead><tbody>';
+  var html = '<table class="table"><thead><tr><th>Задача</th><th>Ответственный</th><th>Срок</th><th>Статус</th><th>Источник</th><th>Действия</th></tr></thead><tbody>';
   for (var i = 0; i < items.length; i++) {
     var task = items[i];
     var soon = isDueSoon(task.due) && task.status !== 'done';
     html += '<tr data-id="' + task.id + '"><td><div style="display:flex;align-items:center;gap:14px"><label class="check"><input type="checkbox" data-done="' + task.id + '"' + (task.status === 'done' ? ' checked' : '') + ' aria-label="Выполнено"></label><span class="t-title">' + esc(task.title) + '</span></div></td>' +
-      '<td>' + esc(task.assigneeName) + '</td><td class="' + (soon ? 'due-hot' : '') + '">' + esc(formatDateTime(task.due)) + '</td><td>' + statusBadge(task.status) + '</td><td>' + esc(task.source) + '</td></tr>';
+      '<td>' + esc(task.assigneeName) + '</td><td class="' + (soon ? 'due-hot' : '') + '">' + esc(formatDateTime(task.due)) + '</td><td>' + statusBadge(task.status) + '</td><td>' + esc(task.source) + '</td><td><button class="btn hidden" data-manager-delete data-delete-task="' + task.id + '" aria-label="Удалить задачу: ' + esc(task.title) + '">Удалить</button></td></tr>';
   }
-  $('#table-box').innerHTML = html + '</tbody></table>';
+  $('#table-box').innerHTML = html + '</tbody></table>'; configureDeletionControls();
 }
 
 function renderPager(total) {
@@ -156,6 +156,9 @@ document.addEventListener('DOMContentLoaded', async function () {
   $('#sort').addEventListener('change', function (event) { state.sort = event.target.value; state.page = 1; loadTasks(); });
   $('#pages').addEventListener('click', function (event) { var button = event.target.closest('button'); if (button) { state.page = parseInt(button.dataset.page, 10); loadTasks(); } });
   $('#table-box').addEventListener('click', async function (event) {
+    var remove=event.target.closest('[data-delete-task]');
+    if(remove){event.preventDefault();event.stopPropagation();confirmRemoval('Удалить задачу?', '«'+remove.closest('tr').querySelector('.t-title').textContent+'»\nЗадача, комментарии, история и напоминание будут удалены.',async function(){await API.deleteTask(remove.dataset.deleteTask);await loadTasks();await loadReminders();loadSideBadge();toast('Задача удалена');});return;}
+
     var box = event.target.closest('[data-done]');
     if (box) {
       event.stopPropagation();

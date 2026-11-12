@@ -25,13 +25,71 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route(
             "/api/assistant/dialogs",
-            get(list_dialogs).post(create_dialog),
+            get(list_dialogs)
+                .post(create_dialog)
+                .delete(delete_all_dialogs),
         )
-        .route("/api/assistant/dialogs/:id", get(get_dialog))
+        .route(
+            "/api/assistant/dialogs/:id",
+            get(get_dialog).delete(delete_dialog),
+        )
         .route("/api/assistant/dialogs/:id/messages", post(send_message))
         .route("/api/assistant/proposals/:id/confirm", post(confirm))
         .route("/api/assistant/proposals/:id/reject", post(reject))
         .layer(DefaultBodyLimit::max(64 * 1024))
+}
+async fn delete_dialogs_for(
+    state: &AppState,
+    auth: &CurrentUser,
+    id: Option<i64>,
+) -> ApiResult<Json<Value>> {
+    let mut tx = state.db.begin().await?;
+    let ids:Vec<i64>=sqlx::query_scalar("SELECT id FROM assistant_dialogs WHERE user_id=$1 AND ($2::bigint IS NULL OR id=$2) ORDER BY id").bind(auth.id).bind(id).fetch_all(&mut *tx).await?;
+    if id.is_some() && ids.is_empty() {
+        return Err(ApiError::not_found("Диалог не найден"));
+    }
+    for dialog in &ids {
+        sqlx::query("SELECT pg_advisory_xact_lock($1)")
+            .bind(-dialog)
+            .execute(&mut *tx)
+            .await?;
+    }
+    // Fence the lease UPDATE as well as confirmations before checking activity.
+    sqlx::query(
+        "SELECT id FROM assistant_dialogs WHERE user_id=$1 AND id=ANY($2) ORDER BY id FOR UPDATE",
+    )
+    .bind(auth.id)
+    .bind(&ids)
+    .fetch_all(&mut *tx)
+    .await?;
+    let active:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM assistant_dialogs WHERE id=ANY($1) AND generation_until>NOW())").bind(&ids).fetch_one(&mut *tx).await?;
+    if active {
+        return Err(ApiError::conflict(
+            "Дождитесь ответа ассистента перед удалением диалога",
+        ));
+    }
+    let deleted = sqlx::query("DELETE FROM assistant_dialogs WHERE user_id=$1 AND id=ANY($2)")
+        .bind(auth.id)
+        .bind(&ids)
+        .execute(&mut *tx)
+        .await?
+        .rows_affected();
+    tx.commit().await?;
+    Ok(Json(json!({"ok":true,"deleted":deleted})))
+}
+async fn delete_dialog(
+    State(state): State<AppState>,
+    Extension(auth): Extension<CurrentUser>,
+    Path(id): Path<i64>,
+) -> ApiResult<Json<Value>> {
+    positive_id(id)?;
+    delete_dialogs_for(&state, &auth, Some(id)).await
+}
+async fn delete_all_dialogs(
+    State(state): State<AppState>,
+    Extension(auth): Extension<CurrentUser>,
+) -> ApiResult<Json<Value>> {
+    delete_dialogs_for(&state, &auth, None).await
 }
 async fn actor(state: &AppState, auth: &CurrentUser) -> ApiResult<Employee> {
     let mut employee = api::current_user(&state.db, auth).await?;
@@ -564,6 +622,11 @@ async fn resolve(
     // Serialize repeated clicks before reading the proposal, so the second
     // request sees the committed result under READ COMMITTED.
     let mut lock = state.db.begin().await?;
+    let dialog:i64=sqlx::query_scalar("SELECT d.id FROM assistant_proposals p JOIN assistant_messages m ON m.id=p.message_id JOIN assistant_dialogs d ON d.id=m.dialog_id WHERE p.id=$1 AND d.user_id=$2").bind(id).bind(auth.id).fetch_optional(&mut *lock).await?.ok_or_else(||ApiError::not_found("Предложение не найдено"))?;
+    sqlx::query("SELECT pg_advisory_xact_lock($1)")
+        .bind(-dialog)
+        .execute(&mut *lock)
+        .await?;
     sqlx::query("SELECT pg_advisory_xact_lock($1)")
         .bind(id)
         .execute(&mut *lock)

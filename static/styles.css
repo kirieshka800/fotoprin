@@ -406,3 +406,9 @@ body[data-nav="assistant"] .chat-head h2{overflow-wrap:anywhere}
   .proposal-details>div{grid-template-columns:minmax(0,1fr);gap:4px}
   .assistant-proposal{padding:12px}
 }
+.dialog-entry{display:flex;align-items:center;gap:4px;min-width:0}
+.dialog-entry .dialog-item{flex:1;min-width:0}
+.dialog-entry .icon-btn{flex:none}
+[data-manager-delete], [data-delete-notice], #delete-all-notifications, #clear-dialogs{color:#b42318}
+body[data-nav="tasks"] .table-wrap{overflow-x:auto}
+.head-actions{flex-wrap:wrap}

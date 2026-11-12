@@ -17,7 +17,7 @@
 
 <div class="page-head" style="margin-bottom:22px">
   <div><div class="eyebrow"><a href="tasks.html">&larr; Все задачи</a><span>/</span><span id="code"></span></div><h1 id="title" style="margin-top:14px">&nbsp;</h1><p class="page-sub" id="origin" style="font-size:13px">&nbsp;</p></div>
-  <div class="head-actions"><button class="btn" id="edit">Редактировать</button><button class="btn primary" id="complete">Завершить задачу</button></div>
+  <div class="head-actions"><button class="btn hidden" id="delete-task" data-manager-delete>Удалить задачу</button><button class="btn" id="edit">Редактировать</button><button class="btn primary" id="complete">Завершить задачу</button></div>
 </div>
 <div class="grid-main">
   <div class="stack">
@@ -67,7 +67,7 @@ async function loadTask() {
   try {
     var results = await Promise.all([API.getTask(id), API.getEmployees()]);
     task = results[0]; employees = results[1];
-    fill();
+    fill(); configureDeletionControls();
   } catch (error) { $('#title').textContent = 'Задача не найдена'; showError(error); }
 }
 
@@ -132,6 +132,7 @@ async function save(fields, message) {
 }
 
 document.addEventListener('DOMContentLoaded', function () {
+  $('#delete-task').addEventListener('click', function () { if(!task){return;} confirmRemoval('Удалить задачу?', '«'+task.title+'»\nЗадача, комментарии, история и напоминание будут удалены.',async function(){await API.deleteTask(task.id);window.location.href='tasks.html';}); });
   loadTask();
   $('#assignee').addEventListener('change', function (event) { save({ assigneeId: event.target.value }, 'Ответственный изменён'); });
   $('#status').addEventListener('change', function (event) { save({ status: event.target.value }, 'Статус обновлён'); });

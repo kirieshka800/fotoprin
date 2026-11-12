@@ -424,6 +424,7 @@ async fn main() {
             "/api/meetings/:id",
             get(meetings::get_meeting).delete(meetings::delete_meeting),
         )
+        .route("/api/meetings/:id/summary", axum::routing::delete(meetings::delete_summary))
         .route("/api/meetings/:id/status", get(meetings::meeting_status))
         .route("/api/meetings/:id/transcribe", post(meetings::retry_transcription))
         .route("/api/meetings/:id/ask", post(meetings::ask_about_meeting))

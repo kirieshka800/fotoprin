@@ -46,7 +46,8 @@ pub fn router() -> Router<AppState> {
         .route("/api/schedule/proposal/reject", post(schedule::reject_proposal))
         .route("/api/schedule/publish", post(schedule::publish))
         // уведомления
-        .route("/api/notifications", get(notifications::list_notifications))
+        .route("/api/notifications", get(notifications::list_notifications).delete(notifications::delete_all))
+        .route("/api/notifications/:id", axum::routing::delete(notifications::delete_one))
         .route("/api/notifications/read-all", post(notifications::read_all))
         .route("/api/notifications/:id/read", post(notifications::read_one))
 }
@@ -94,54 +95,25 @@ impl Employee {
 }
 
 /// Сотрудник, соответствующий вошедшему пользователю (таблица users из auth.rs).
-/// Ищем по почте, затем по имени; если такого сотрудника ещё нет — создаём, чтобы пользователь
+/// Ищем по почте, затем среди ещё не привязанных имён; иначе создаём, чтобы пользователь
 /// появился в списках ответственных и мог получать уведомления. Администратор всегда руководитель.
 pub async fn current_user(db: &PgPool, auth: &CurrentUser) -> ApiResult<Employee> {
-    let found = sqlx::query_as::<_, Employee>(&format!(
-        "SELECT {} FROM employees
-         WHERE LOWER(email) = LOWER($1) OR LOWER(name) = LOWER($2)
-         ORDER BY (LOWER(email) = LOWER($1)) DESC, id LIMIT 1",
-        EMPLOYEE_COLS
-    ))
-    .bind(&auth.email)
-    .bind(&auth.name)
-    .fetch_optional(db)
-    .await?;
-
-    let mut employee = match found {
-        Some(emp) => {
-            if emp.email.is_none() {
-                let _ = sqlx::query("UPDATE employees SET email = LOWER($2) WHERE id = $1 AND email IS NULL")
-                    .bind(emp.id)
-                    .bind(&auth.email)
-                    .execute(db)
-                    .await;
-            }
-            emp
-        }
-        None => {
-            let role = if auth.role == "admin" || auth.role == "manager" {
-                "Руководитель"
-            } else {
-                "Сотрудник"
-            };
-            sqlx::query_as::<_, Employee>(&format!(
-                "INSERT INTO employees (name, position, role, department, email)
-                 VALUES ($1, $2, $3, '', LOWER($4)) RETURNING {}",
-                EMPLOYEE_COLS
-            ))
-            .bind(&auth.name)
-            .bind(&auth.position)
-            .bind(role)
-            .bind(&auth.email)
-            .fetch_one(db)
-            .await?
-        }
-    };
-    if auth.role == "admin" {
-        employee.role = "Руководитель".to_string();
+    let role=if auth.role=="admin" || auth.role=="manager" {"Руководитель"}else{"Сотрудник"};
+    let mut tx=db.begin().await?;
+    // Separate two-key advisory namespace: serialize initial mapping for one
+    // account, without retaining a second pooled connection.
+    sqlx::query("SELECT pg_advisory_xact_lock(8241,hashtext(LOWER($1)))").bind(&auth.email).execute(&mut *tx).await?;
+    let mut found=sqlx::query_as::<_,Employee>(&format!("SELECT {} FROM employees WHERE LOWER(email)=LOWER($1)",EMPLOYEE_COLS)).bind(&auth.email).fetch_optional(&mut *tx).await?;
+    if found.is_none() {
+        // A legacy name-only employee may be claimed once. Never reuse an
+        // employee already linked to a different account with the same name.
+        found=sqlx::query_as::<_,Employee>(&format!("UPDATE employees SET email=LOWER($1) WHERE id=(SELECT id FROM employees WHERE email IS NULL AND LOWER(name)=LOWER($2) ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED) AND email IS NULL RETURNING {}",EMPLOYEE_COLS)).bind(&auth.email).bind(&auth.name).fetch_optional(&mut *tx).await?;
     }
-    Ok(employee)
+    let mut employee=match found {
+        Some(employee)=>employee,
+        None=>sqlx::query_as::<_,Employee>(&format!("INSERT INTO employees(name,position,role,department,email) VALUES($1,$2,$3,'',LOWER($4)) ON CONFLICT(LOWER(email)) WHERE email IS NOT NULL DO UPDATE SET email=EXCLUDED.email RETURNING {}",EMPLOYEE_COLS)).bind(&auth.name).bind(&auth.position).bind(role).bind(&auth.email).fetch_one(&mut *tx).await?,
+    };
+    tx.commit().await?;employee.role=role.to_string();Ok(employee)
 }
 
 pub fn require_manager(user: &Employee) -> ApiResult<()> {

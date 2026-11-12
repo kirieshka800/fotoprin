@@ -226,3 +226,16 @@ pub async fn read_all(State(state): State<AppState>, Extension(auth): Extension<
         .await?;
     Ok(Json(json!({ "ok": true, "updated": result.rows_affected() })))
 }
+
+/// Notifications are private to the current employee, regardless of role.
+pub async fn delete_one(State(state):State<AppState>,Extension(auth):Extension<CurrentUser>,Path(raw):Path<String>)->ApiResult<Json<Value>> {
+    let user=current_user(&state.db,&auth).await?;let id=parse_id(&raw,"Уведомление")?;
+    let n=sqlx::query("DELETE FROM notifications WHERE id=$1 AND recipient_id=$2").bind(id).bind(user.id).execute(&state.db).await?.rows_affected();
+    if n==0 {return Err(ApiError::not_found("Уведомление не найдено"));}
+    Ok(Json(json!({"ok":true})))
+}
+pub async fn delete_all(State(state):State<AppState>,Extension(auth):Extension<CurrentUser>)->ApiResult<Json<Value>> {
+    let user=current_user(&state.db,&auth).await?;
+    let n=sqlx::query("DELETE FROM notifications WHERE recipient_id=$1").bind(user.id).execute(&state.db).await?.rows_affected();
+    Ok(Json(json!({"ok":true,"deleted":n})))
+}

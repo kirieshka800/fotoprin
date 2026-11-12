@@ -124,11 +124,14 @@ document.addEventListener('DOMContentLoaded', async function () {
     if (menuButton) {
       event.preventDefault(); event.stopPropagation();
       var id = menuButton.dataset.menu;
-      attachMenu(menuButton, [{ value: 'open', label: 'Открыть' }, { value: 'delete', label: 'Удалить', danger: true }], async function (value) {
+      configureDeletionControls().then(function(allowed){
+      var actions=[{value:'open',label:'Открыть'}];if(allowed){actions.push({value:'delete',label:'Удалить',danger:true});}
+      attachMenu(menuButton, actions, async function (value) {
         if (value === 'open') { window.location.href = 'meeting.html?id=' + id; }
         if (value === 'delete') {
-          try { await API.deleteMeeting(id); toast('Встреча удалена'); loadMeetings(); } catch (error) { showError(error); }
+          confirmRemoval('Удалить встречу?', '«'+menuButton.closest('.m-card').querySelector('.t-title').textContent+'»\nВстреча, саммари, расшифровка и аудиофайл будут удалены. Связанные задачи сохранятся.',async function(){await API.deleteMeeting(id);toast('Встреча удалена');await loadMeetings();});
         }
+      });
       });
       return;
     }

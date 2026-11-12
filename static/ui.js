@@ -414,3 +414,21 @@ function watchMeeting(meetingId, onProgress, onReady, onFail) {
   }, 1200);
   return timer;
 }
+
+/* Shared confirmation for irreversible user-requested removals. */
+function confirmRemoval(title, description, remove) {
+  var modal = openModal({ title: title, narrow: true,
+    html: '<p style="white-space:pre-wrap;line-height:1.5">' + esc(description) + '</p><div class="modal-foot"><button class="btn" data-close>Отмена</button><button class="btn primary" data-confirm-removal>Удалить</button></div>' });
+  var button = $('[data-confirm-removal]', modal.root);
+  button.addEventListener('click', async function () {
+    if (button.disabled) { return; }
+    button.disabled = true; button.textContent = 'Удаляю…';
+    try { await remove(); modal.close(); }
+    catch (error) { showError(error); button.disabled = false; button.textContent = 'Удалить'; }
+  });
+}
+var deletionPermission = null;
+function configureDeletionControls() {
+  if (!deletionPermission) { deletionPermission = API.getMe().then(function (me) { return me.appRole === 'admin' || me.appRole === 'manager'; }).catch(function () { return false; }); }
+  return deletionPermission.then(function (allowed) { $all('[data-manager-delete]').forEach(function (button) { button.classList.toggle('hidden', !allowed); }); return allowed; });
+}

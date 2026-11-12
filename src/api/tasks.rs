@@ -592,13 +592,16 @@ pub async fn delete_task(
     let user = current_user(&state.db, &auth).await?;
     require_manager(&user)?;
     let id = parse_id(&id_raw, "Задача")?;
-    let result = sqlx::query("DELETE FROM tasks WHERE id = $1")
-        .bind(id)
-        .execute(&state.db)
-        .await?;
-    if result.rows_affected() == 0 {
-        return Err(ApiError::not_found("Задача не найдена"));
-    }
+    let mut tx=state.db.begin().await?;
+    // Match the assistant lock order and prevent new reminder FK references.
+    sqlx::query("LOCK TABLE tasks IN ROW EXCLUSIVE MODE").execute(&mut *tx).await?;
+    let found:Option<i64>=sqlx::query_scalar("SELECT id FROM tasks WHERE id=$1 FOR UPDATE").bind(id).fetch_optional(&mut *tx).await?;
+    if found.is_none(){return Err(ApiError::not_found("Задача не найдена"));}
+
+    sqlx::query("DELETE FROM reminders WHERE task_id=$1").bind(id).execute(&mut *tx).await?;
+    let result=sqlx::query("DELETE FROM tasks WHERE id=$1").bind(id).execute(&mut *tx).await?;
+    if result.rows_affected()==0{return Err(ApiError::not_found("Задача не найдена"));}
+    tx.commit().await?;
     Ok(Json(json!({ "ok": true })))
 }
 
