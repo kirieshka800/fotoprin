@@ -30,7 +30,7 @@
         <div style="min-width:120px"><b style="font-size:13px;font-weight:600;display:block">Запись встречи</b><small class="hint" id="time" style="font-size:11px">00:00 / 00:00</small></div>
         <div class="wave" id="wave" role="slider" aria-label="Перемотка"></div>
         <button class="chip" id="speed" aria-label="Скорость">1×</button>
-        <audio id="audio" preload="none"></audio>
+        <audio id="audio" preload="metadata"></audio>
       </section>
       <section class="card" style="padding:0 24px 24px">
         <div class="tabs" role="tablist" id="tabs"><button class="tab active" data-tab="summary">Саммари</button><button class="tab" data-tab="transcript">Расшифровка</button><button class="tab" data-tab="people" id="people-tab">Участники</button></div>
@@ -63,8 +63,6 @@
 
 var meeting = null;
 var employees = [];
-var simulatedSeconds = 0;
-var simulatedTimer = null;
 var playing = false;
 var SPEEDS = [1, 1.25, 1.5, 2];
 var speedIndex = 0;
@@ -111,6 +109,10 @@ function showFailed(message) {
   box.classList.remove('hidden');
   box.innerHTML = errorHtml(message || 'Не удалось обработать запись.', 'Не получилось собрать саммари', meeting.audioUrl);
   bindError(box);
+  if (meeting && meeting.audioUrl) {
+    box.insertAdjacentHTML('beforeend','<button class="btn primary" id="retry-transcription">Распознать аудио</button>');
+    $('#retry-transcription',box).addEventListener('click',retryTranscription);
+  }
 }
 function bindError(box) {
   var retry = $('#retry-upload', box), other = $('#pick-other', box);
@@ -122,9 +124,14 @@ function showReady() {
   $('#content').classList.remove('hidden');
   $('#people-tab').textContent = 'Участники · ' + meeting.participantIds.length;
   renderSummary(); renderTranscript(); renderPeople(); buildWave(); loadTasks();
-  var total = meeting.audioDuration || (meeting.durationMin || 0) * 60;
-  $('#time').textContent = '00:00 / ' + clockText(total);
-  if (meeting.audioUrl) { $('#audio').src = meeting.audioUrl; }
+  $('#play').disabled = !meeting.audioUrl;
+  $('#speed').disabled = !meeting.audioUrl;
+  $('#wave').setAttribute('tabindex',meeting.audioUrl ? '0' : '-1');
+  if (meeting.audioUrl) { $('#audio').src = meeting.audioUrl; $('#audio').load(); }
+  paintPlayer();
+  if (meeting.audioUrl && meeting.errorMessage && !(meeting.transcript || []).length) {
+    $('#content .chips').firstElementChild.textContent='Саммари по заметкам';
+  }
 }
 
 function renderSummary() {
@@ -148,7 +155,12 @@ function renderSummary() {
 }
 function renderTranscript() {
   var rows = meeting.transcript || [];
-  if (rows.length === 0) { $('#tab-transcript').innerHTML = '<div class="empty"><h3>Расшифровки пока нет</h3><p>Она появится, когда запись будет обработана.</p></div>'; return; }
+  if (rows.length === 0) {
+    var warning=meeting.audioUrl ? (meeting.errorMessage || 'Аудио ещё не распознано. Нажмите кнопку, чтобы обработать сохранённую запись.') : 'У встречи нет аудиозаписи.';
+    $('#tab-transcript').innerHTML='<div class="empty"><h3>Расшифровки пока нет</h3><p>'+esc(warning)+'</p>'+(meeting.audioUrl ? '<button class="btn primary" id="retry-transcription">Распознать аудио</button>':'')+'</div>';
+    if (meeting.audioUrl) {$('#retry-transcription').addEventListener('click',retryTranscription);}
+    return;
+  }
   var html = '<div style="padding-top:8px">';
   for (var i = 0; i < rows.length; i++) {
     html += '<div class="topic"><div><b>' + esc(rows[i].speaker) + '</b><small>' + esc(rows[i].text) + '</small></div><button class="time" data-seek="' + esc(rows[i].time) + '">' + esc(rows[i].time) + '</button></div>';
@@ -156,6 +168,11 @@ function renderTranscript() {
   $('#tab-transcript').innerHTML = html + '</div>';
   var seekers = $all('[data-seek]', $('#tab-transcript'));
   for (var k = 0; k < seekers.length; k++) { seekers[k].addEventListener('click', function (event) { seekToText(event.currentTarget.dataset.seek); }); }
+}
+async function retryTranscription(event) {
+  var button=event.currentTarget;button.disabled=true;button.textContent='Отправляю запись…';
+  try {await request('POST','/meetings/'+encodeURIComponent(meeting.id)+'/transcribe',{});window.location.reload();}
+  catch(error){showError(error);button.disabled=false;button.textContent='Распознать аудио';}
 }
 function renderPeople() {
   var html = '<div style="padding-top:12px">';
@@ -206,34 +223,54 @@ function buildWave() {
   for (var i = 0; i < 70; i++) { seed = (seed * 9301 + 49297) % 233280; html += '<i style="height:' + (20 + Math.round(seed / 233280 * 80)) + '%"></i>'; }
   $('#wave').innerHTML = html;
 }
-function totalSeconds() { return meeting.audioDuration || (meeting.durationMin || 1) * 60; }
-function currentSeconds() { return meeting.audioUrl ? $('#audio').currentTime : simulatedSeconds; }
+function totalSeconds() {
+  var actual=$('#audio').duration;
+  if (meeting && meeting.audioUrl && Number.isFinite(actual) && actual>0) {return actual;}
+  var saved=meeting ? Number(meeting.audioDuration) : 0;
+  return Number.isFinite(saved) && saved>0 ? saved : 0;
+}
+function currentSeconds() { var t=$('#audio').currentTime;return Number.isFinite(t) ? t : 0; }
 function paintPlayer() {
-  var current = currentSeconds();
-  var bars = $all('#wave i');
-  var doneCount = Math.round(bars.length * current / totalSeconds());
-  for (var i = 0; i < bars.length; i++) { bars[i].classList.toggle('done', i < doneCount); }
-  $('#time').textContent = clockText(current) + ' / ' + clockText(totalSeconds());
+  var current=currentSeconds(),total=totalSeconds(),bars=$all('#wave i');
+  var doneCount=total>0 ? Math.round(bars.length*Math.min(current/total,1)) : 0;
+  for (var i=0;i<bars.length;i++){bars[i].classList.toggle('done',i<doneCount);}
+  $('#time').textContent=clockText(current)+' / '+(total>0 ? clockText(total) : '--:--');
+  $('#wave').setAttribute('aria-valuemin','0');$('#wave').setAttribute('aria-valuemax',String(total));$('#wave').setAttribute('aria-valuenow',String(Math.min(current,total)));
+}
+function paintPlaying(value) {
+  playing=value;
+  $('#play').setAttribute('aria-label',value ? 'Пауза' : 'Воспроизвести');
+  $('#play').innerHTML=value ? '<svg class="i" viewBox="0 0 24 24"><path d="M8 5v14M16 5v14"/></svg>' : '<svg class="i" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>';
 }
 function setPlaying(value) {
-  playing = value;
-  $('#play').innerHTML = value ? '<svg class="i" viewBox="0 0 24 24" style="stroke-width:3;fill:none"><path d="M8 5v14M16 5v14"/></svg>' : '<svg class="i" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>';
-  if (meeting.audioUrl) { if (value) { $('#audio').play(); } else { $('#audio').pause(); } }
-  clearInterval(simulatedTimer);
-  if (value && !meeting.audioUrl) { /* пока нет файла записи — имитация хода воспроизведения */
-    simulatedTimer = setInterval(function () { simulatedSeconds += SPEEDS[speedIndex]; if (simulatedSeconds >= totalSeconds()) { simulatedSeconds = 0; setPlaying(false); } paintPlayer(); }, 1000);
-  }
+  var audio=$('#audio');
+  if (!meeting || !meeting.audioUrl){paintPlaying(false);return;}
+  if (!value){audio.pause();paintPlaying(false);return;}
+  if (audio.ended){audio.currentTime=0;}
+  var started=audio.play();
+  if (started && started.catch){started.catch(function(){paintPlaying(false);showError(new Error('Не удалось воспроизвести запись. Проверьте наличие файла и поддерживаемый формат аудио.'));});}
 }
 function seekTo(seconds) {
-  if (meeting.audioUrl) { $('#audio').currentTime = seconds; } else { simulatedSeconds = seconds; }
-  paintPlayer();
+  var audio=$('#audio'),total=totalSeconds();
+  if (!meeting || !meeting.audioUrl || !Number.isFinite(seconds) || total<=0 || audio.readyState<1){return;}
+  audio.currentTime=Math.max(0,Math.min(seconds,total));paintPlayer();
 }
-function seekToText(text) { var parts = text.split(':'); seekTo(parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10)); if (!playing) { setPlaying(true); } }
+function seekToText(text) {var parts=text.split(':').map(Number),seconds=0;for(var i=0;i<parts.length;i++){seconds=seconds*60+parts[i];}seekTo(seconds);if(!playing){setPlaying(true);}}
 
 document.addEventListener('DOMContentLoaded', function () {
   loadMeeting();
   $('#play').addEventListener('click', function () { setPlaying(!playing); });
-  $('#audio').addEventListener('timeupdate', paintPlayer);
+  var audio=$('#audio');
+  ['timeupdate','loadedmetadata','durationchange','loadeddata','seeked'].forEach(function(event){audio.addEventListener(event,paintPlayer);});
+  audio.addEventListener('play',function(){paintPlaying(true);});
+  audio.addEventListener('pause',function(){paintPlaying(false);});
+  audio.addEventListener('ended',function(){paintPlaying(false);paintPlayer();});
+  audio.addEventListener('error',function(){paintPlaying(false);$('#time').textContent='Запись недоступна';});
+  $('#wave').addEventListener('keydown',function(event){
+    var value=currentSeconds();
+    if(event.key==='ArrowRight'){value+=5;}else if(event.key==='ArrowLeft'){value-=5;}else if(event.key==='Home'){value=0;}else if(event.key==='End'){value=totalSeconds();}else{return;}
+    event.preventDefault();seekTo(value);
+  });
   $('#speed').addEventListener('click', function (event) {
     speedIndex = (speedIndex + 1) % SPEEDS.length;
     event.currentTarget.textContent = String(SPEEDS[speedIndex]).replace('.', ',') + '×';

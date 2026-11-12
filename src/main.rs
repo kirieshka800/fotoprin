@@ -19,6 +19,7 @@ mod auth;
 mod error;
 mod meetings;
 mod util;
+mod transcription;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -424,6 +425,7 @@ async fn main() {
             get(meetings::get_meeting).delete(meetings::delete_meeting),
         )
         .route("/api/meetings/:id/status", get(meetings::meeting_status))
+        .route("/api/meetings/:id/transcribe", post(meetings::retry_transcription))
         .route("/api/meetings/:id/ask", post(meetings::ask_about_meeting))
         .route("/api/meetings/:id/export", get(meetings::export_meeting))
         // Остальное (было раньше)

@@ -746,16 +746,17 @@ pub(crate) async fn process_meeting(
 ) {
     // 1. Достаём текст из файла
     let mut full_text = notes.trim().to_string();
+    let mut transcription_warning:Option<String>=None;
     let audio_name = match &file_name {
         Some(name) if is_audio_file(name) => Some(name.clone()),
         _ => None,
     };
     if let Some(name) = &audio_name {
         // Аудио: переводим речь в текст (Whisper), расшифровку сохраняем отдельно
-        match transcribe_audio(name, file_bytes).await {
+        match crate::transcription::transcribe(name, file_bytes).await {
             Ok(transcript) => {
                 let rows = transcript_to_json(&transcript.segments);
-                let _ = sqlx::query(
+                let saved = sqlx::query(
                     "UPDATE meetings SET transcript = $2, audio_duration = $3, progress = 20 WHERE id = $1",
                 )
                 .bind(meeting_id)
@@ -763,17 +764,20 @@ pub(crate) async fn process_meeting(
                 .bind(transcript.duration_seconds)
                 .execute(&db)
                 .await;
-                if !full_text.is_empty() {
-                    full_text.push_str("\n\n");
-                }
-                full_text.push_str(&transcript.text);
+                if let Err(error)=saved {fail_meeting(&db,meeting_id,&format!("Не удалось сохранить расшифровку: {error}")).await;return;}
+                full_text=if full_text.is_empty() {
+                    format!("Расшифровка аудиозаписи:\n{}",transcript.text)
+                }else{
+                    format!("Расшифровка аудиозаписи:\n{}\n\nЗаметки пользователя:\n{}",transcript.text,full_text)
+                };
             }
             Err(message) => {
                 if full_text.is_empty() {
                     fail_meeting(&db, meeting_id, &message).await;
                     return;
                 }
-                // есть заметки — продолжаем только по ним, запись остаётся доступной для прослушивания
+                transcription_warning=Some(message);
+                // Keep the warning visible: summary below is based on notes only.
             }
         }
     } else if let Some(name) = &file_name {
@@ -802,11 +806,12 @@ pub(crate) async fn process_meeting(
         fail_meeting(&db, meeting_id, "В файле не нашлось текста").await;
         return;
     }
-    let _ = sqlx::query("UPDATE meetings SET raw_text = $2, progress = 25 WHERE id = $1")
+    let saved = sqlx::query("UPDATE meetings SET raw_text = $2, progress = 25 WHERE id = $1")
         .bind(meeting_id)
         .bind(&full_text)
         .execute(&db)
         .await;
+    if let Err(error)=saved {fail_meeting(&db,meeting_id,&format!("Не удалось сохранить текст встречи: {error}")).await;return;}
 
     // 2. Нейросеть. Пока она думает, постепенно двигаем индикатор (до 85%)
     let ticker_db = db.clone();
@@ -855,17 +860,24 @@ pub(crate) async fn process_meeting(
     let mut created_tasks: i64 = 0;
     if create_tasks {
         match crate::api::tasks::create_from_protocol(&db, meeting_id, &title, &protocol.tasks).await {
-            Ok(count) => created_tasks = count as i64,
+            Ok(count) => {
+                created_tasks=count as i64;
+                if let Err(error)=sqlx::query("UPDATE meetings SET actions=jsonb_set(actions,'{tasksGenerated}','true'::jsonb) WHERE id=$1").bind(meeting_id).execute(&db).await {
+                    fail_meeting(&db,meeting_id,&format!("Не удалось сохранить состояние задач: {error}")).await;return;
+                }
+            },
             Err(err) => eprintln!("Не удалось создать задачи из протокола: {}", err),
         }
     }
 
-    let _ = sqlx::query(
-        "UPDATE meetings SET status = 'ready', progress = 100, error_message = NULL WHERE id = $1",
+    let finished = sqlx::query(
+        "UPDATE meetings SET status = 'ready', progress = 100, error_message = $2 WHERE id = $1",
     )
     .bind(meeting_id)
+    .bind(&transcription_warning)
     .execute(&db)
     .await;
+    if let Err(error)=finished {fail_meeting(&db,meeting_id,&format!("Не удалось сохранить готовность встречи: {error}")).await;return;}
 
     // 4. Лента на «Обзоре»
     add_activity(
@@ -978,13 +990,13 @@ pub async fn ask_about_meeting(
     Path(id): Path<i64>,
     Json(body): Json<AskMeetingBody>,
 ) -> Result<Json<Value>, ResponseError> {
-    let row: Option<(String, String, String)> =
-        sqlx::query_as("SELECT title, raw_text, status FROM meetings WHERE id = $1")
+    let row: Option<(String, String, String, bool)> =
+        sqlx::query_as("SELECT title, raw_text, status, (audio_file IS NOT NULL AND transcript='[]'::jsonb) FROM meetings WHERE id = $1")
             .bind(id)
             .fetch_optional(&state.db)
             .await
             .map_err(db_error)?;
-    let (title, raw_text, status) =
+    let (title, raw_text, status, unrecognized_audio) =
         row.ok_or_else(|| create_error_response(StatusCode::NOT_FOUND, "Встреча не найдена"))?;
     if status != "ready" {
         return Err(bad_request("Встреча ещё обрабатывается — вопросы станут доступны после готовности"));
@@ -1012,6 +1024,7 @@ pub async fn ask_about_meeting(
     let parsed: Value = serde_json::from_str(&raw).unwrap_or(json!({ "answer": raw }));
     let answer = parsed["answer"].as_str().unwrap_or(&raw).to_string();
 
+    let answer=if unrecognized_audio {format!("Аудио ещё не распознано. Следующий ответ основан только на заметках, а не на записи.\n\n{answer}")}else{answer};
     Ok(Json(json!({ "answer": answer, "source": format!("встреча «{}»", title) })))
 }
 
@@ -1099,16 +1112,7 @@ pub async fn export_meeting(
 //   WHISPER_URL=http://localhost:8000
 //   WHISPER_MODEL=Systran/faster-whisper-small    (необязательно)
 
-struct Segment {
-    start_seconds: f64,
-    text: String,
-}
-
-struct Transcript {
-    text: String,
-    segments: Vec<Segment>,
-    duration_seconds: i32,
-}
+use crate::transcription::Segment;
 
 fn clock_text(total_seconds: f64) -> String {
     let total = total_seconds.max(0.0) as i64;
@@ -1127,72 +1131,18 @@ fn transcript_to_json(segments: &[Segment]) -> Value {
     Value::Array(rows)
 }
 
-async fn transcribe_audio(file_name: &str, bytes: Vec<u8>) -> Result<Transcript, String> {
-    let base = std::env::var("WHISPER_URL").unwrap_or_default();
-    if base.trim().is_empty() {
-        return Err(
-            "Запись сохранена и её можно слушать, но распознавание речи не настроено: \
-             запустите сервер Whisper и укажите WHISPER_URL в .env. \
-             Пока можно вставить текст встречи в заметки."
-                .to_string(),
-        );
-    }
-    let model = std::env::var("WHISPER_MODEL").unwrap_or_else(|_| "whisper-1".to_string());
-    let url = format!("{}/v1/audio/transcriptions", base.trim_end_matches('/'));
 
-    let file_part = reqwest::multipart::Part::bytes(bytes).file_name(file_name.to_string());
-    let form = reqwest::multipart::Form::new()
-        .part("file", file_part)
-        .text("model", model)
-        .text("language", "ru")
-        .text("response_format", "verbose_json");
-
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(3600))
-        .build()
-        .map_err(|e| format!("Ошибка HTTP-клиента: {}", e))?;
-    let response = client
-        .post(url)
-        .multipart(form)
-        .send()
-        .await
-        .map_err(|e| format!("Не удалось связаться с сервером распознавания речи (WHISPER_URL): {}", e))?;
-
-    let status = response.status();
-    if !status.is_success() {
-        let body = response.text().await.unwrap_or_default();
-        return Err(format!("Сервер распознавания речи вернул {}: {}", status, body));
-    }
-    let data: Value = response
-        .json()
-        .await
-        .map_err(|e| format!("Непонятный ответ сервера распознавания речи: {}", e))?;
-
-    let mut segments: Vec<Segment> = Vec::new();
-    if let Some(list) = data["segments"].as_array() {
-        for item in list {
-            let text = item["text"].as_str().unwrap_or("").trim().to_string();
-            if !text.is_empty() {
-                segments.push(Segment {
-                    start_seconds: item["start"].as_f64().unwrap_or(0.0),
-                    text,
-                });
-            }
-        }
-    }
-    let full_text = data["text"].as_str().unwrap_or("").trim().to_string();
-    if segments.is_empty() && !full_text.is_empty() {
-        segments.push(Segment { start_seconds: 0.0, text: full_text.clone() });
-    }
-    if segments.is_empty() {
-        return Err("В записи не удалось распознать речь".to_string());
-    }
-
-    let mut text = String::new();
-    for segment in &segments {
-        text.push_str(&segment.text);
-        text.push('\n');
-    }
-    let duration = data["duration"].as_f64().unwrap_or(0.0);
-    Ok(Transcript { text, segments, duration_seconds: duration.round() as i32 })
+/// Reprocess the stored file without adding duplicate tasks from its protocol.
+pub async fn retry_transcription(State(state):State<AppState>,Path(id):Path<i64>)->Result<(StatusCode,Json<Value>),ResponseError> {
+    let row=sqlx::query("SELECT title,description,audio_file,status,actions,EXISTS(SELECT 1 FROM tasks WHERE meeting_id=meetings.id) AS has_tasks FROM meetings WHERE id=$1").bind(id).fetch_optional(&state.db).await.map_err(db_error)?.ok_or_else(||create_error_response(StatusCode::NOT_FOUND,"Встреча не найдена"))?;
+    let file:Option<String>=row.get("audio_file");let file=file.ok_or_else(||bad_request("У встречи нет аудиозаписи"))?;
+    if !file.starts_with(&format!("meeting-{id}.")) || file.contains("..") || file.contains('/') || file.contains('\\') {return Err(bad_request("Некорректное имя записи"));}
+    if row.get::<String,_>("status")=="processing" {return Err(create_error_response(StatusCode::CONFLICT,"Запись уже обрабатывается"));}
+    let bytes=tokio::fs::read(std::path::Path::new(UPLOADS_DIR).join(&file)).await.map_err(|_|bad_request("Файл записи не найден на сервере"))?;
+    let row=sqlx::query("UPDATE meetings SET status='processing',progress=5,error_message=NULL WHERE id=$1 AND status<>'processing' RETURNING title,description,actions,EXISTS(SELECT 1 FROM tasks WHERE meeting_id=meetings.id) AS has_tasks").bind(id).fetch_optional(&state.db).await.map_err(db_error)?.ok_or_else(||create_error_response(StatusCode::CONFLICT,"Запись уже обрабатывается"))?;
+    let actions:Value=row.get("actions");
+    let create_tasks=action_enabled(&actions,"tasks") && actions.get("tasksGenerated").and_then(Value::as_bool)!=Some(true) && !row.get::<bool,_>("has_tasks");
+    let title=row.get("title");let notes=row.get("description");let db=state.db.clone();
+    tokio::spawn(async move {process_meeting(db,id,title,notes,Some(file),bytes,create_tasks).await;});
+    Ok((StatusCode::ACCEPTED,Json(json!({"ok":true,"status":"processing"}))))
 }
