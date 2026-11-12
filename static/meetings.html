@@ -6,6 +6,7 @@
 <title>Саммари встреч · Фотопринт AI</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap&subset=cyrillic" rel="stylesheet">
+<script>try{if(localStorage.getItem('fp_theme')==='dark'){document.documentElement.setAttribute('data-theme','dark')}}catch(e){}</script>
 <link rel="stylesheet" href="styles.css">
 </head>
 <body data-nav="meetings" data-title="Саммари встреч">
@@ -27,7 +28,7 @@
   </select>
   <div class="chips" style="margin-left:auto"><button class="chip active" data-status="">Все</button><button class="chip" data-status="ready">Готовые</button><button class="chip" id="more-chip">Ещё ⌄</button></div>
 </div>
-<div class="grid-2" id="list"><div class="card skeleton" style="height:200px"></div><div class="card skeleton" style="height:200px"></div></div>
+<div class="grid-2" id="list" data-loader></div>
 <div id="empty" class="card hidden"><div class="empty"><h2>Пока ничего не нашлось</h2><p>Попробуйте другое название или сбросьте фильтры.</p><button class="btn primary lg" id="reset">Сбросить фильтры</button><p class="hint" style="margin-top:22px">Поисковый запрос остаётся в строке до сброса.</p></div></div>
 <div class="row" style="justify-content:space-between;align-items:center;margin-top:24px" id="footer-row">
   <span class="hint" id="shown" style="font-size:11px"></span><button class="btn" id="more" style="height:40px">Показать ещё</button>
@@ -39,6 +40,7 @@
 <script src="config.js"></script>
 <script src="mock-data.js"></script>
 <script src="api.js"></script>
+<script src="interface.js"></script>
 <script src="ui.js"></script>
 <script>
 
@@ -100,6 +102,7 @@ function cardHtml(meeting) {
 
 function resetFilters() {
   $('#search').value = ''; $('#department').value = ''; $('#period').value = 'week'; statusFilter = ''; visibleCount = PAGE_SIZE;
+  syncCustomSelects(document);
   loadMeetings();
 }
 

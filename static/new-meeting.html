@@ -6,6 +6,7 @@
 <title>Новая встреча · Фотопринт AI</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap&subset=cyrillic" rel="stylesheet">
+<script>try{if(localStorage.getItem('fp_theme')==='dark'){document.documentElement.setAttribute('data-theme','dark')}}catch(e){}</script>
 <link rel="stylesheet" href="styles.css">
 </head>
 <body data-nav="new-meeting" data-title="Новая встреча">
@@ -58,9 +59,9 @@
       </ul></section>
     <section class="card"><h2 style="font-size:19px;margin-bottom:16px">Действия после обработки</h2>
       <div style="display:flex;flex-direction:column;gap:18px;padding-bottom:20px">
-        <label class="check"><input type="checkbox" id="act-tasks" checked> Создать задачи</label>
-        <label class="check"><input type="checkbox" id="act-reminders" checked> Настроить напоминания</label>
-        <label class="check"><input type="checkbox" id="act-schedule" checked> Предложить график смен</label></div></section>
+        <label class="cl-checkbox"><input type="checkbox" id="act-tasks" checked><span>Создать задачи</span></label>
+        <label class="cl-checkbox"><input type="checkbox" id="act-reminders" checked><span>Настроить напоминания</span></label>
+        <label class="cl-checkbox"><input type="checkbox" id="act-schedule" checked><span>Предложить график смен</span></label></div></section>
     <section class="card tint"><h3>Под вашим контролем</h3><p>Материалы доступны только команде.<br>Новый график не будет опубликован<br>без подтверждения руководителя.</p></section>
   </div>
 </div>
@@ -71,6 +72,7 @@
 <script src="config.js"></script>
 <script src="mock-data.js"></script>
 <script src="api.js"></script>
+<script src="interface.js"></script>
 <script src="ui.js"></script>
 <script>
 
@@ -88,7 +90,7 @@ function renderPeopleButton() {
 function renderPeopleMenu() {
   var html = '';
   for (var i = 0; i < employees.length; i++) {
-    html += '<label><input type="checkbox" value="' + employees[i].id + '"' + (selectedPeople.indexOf(employees[i].id) >= 0 ? ' checked' : '') + '> ' + esc(employees[i].name) + '</label>';
+    html += '<label class="cl-checkbox"><input type="checkbox" value="' + employees[i].id + '"' + (selectedPeople.indexOf(employees[i].id) >= 0 ? ' checked' : '') + '><span>' + esc(employees[i].name) + '</span></label>';
   }
   $('#people-menu').innerHTML = html;
   var boxes = $all('input', $('#people-menu'));

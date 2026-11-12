@@ -13,12 +13,13 @@ with sync_playwright() as p:
  def cancel():page.get_by_role('button',name='Отмена',exact=True).click()
  # List deletion: cancelling keeps the task; confirming removes it without opening the row.
  task=api('POST','/tasks',{'title':f'Browser task {time.time_ns()}','due':'2027-12-01T15:00:00+03:00'}).json();tid=task['id']
- page.goto(BASE+'/tasks.html?sort=title')
  # Ensure fixture is on the first page independently of accumulated test records.
- page.route('**/api/tasks?*',lambda route:route.fulfill(json={'items':[task] if api('GET',f'/tasks/{tid}').status==200 else [],'total':1 if api('GET',f'/tasks/{tid}').status==200 else 0,'counts':{'active':1,'all':1,'done':0}}))
- page.reload();button=page.locator(f'[data-delete-task="{tid}"]');expect(button).to_be_visible();button.click();cancel();assert api('GET',f'/tasks/{tid}').status==200
- button.click();confirm();expect(page.locator(f'[data-delete-task="{tid}"]')).to_have_count(0);assert api('GET',f'/tasks/{tid}').status==404
- page.unroute('**/api/tasks?*')
+ # Avoid nested sync HTTP calls in route handlers (they can race unroute/reload).
+ visible_tasks=[task]
+ page.route('**/api/tasks?*',lambda route:route.fulfill(json={'items':visible_tasks[:],'total':len(visible_tasks),'counts':{'active':len(visible_tasks),'all':len(visible_tasks),'done':0}}))
+ page.goto(BASE+'/tasks.html?sort=title');button=page.locator(f'[data-delete-task="{tid}"]');expect(button).to_be_visible();button.click();cancel();assert api('GET',f'/tasks/{tid}').status==200
+ button.click();visible_tasks.clear();confirm();expect(page.locator(f'[data-delete-task="{tid}"]')).to_have_count(0);assert api('GET',f'/tasks/{tid}').status==404
+ page.unroute_all(behavior='wait')
  # Detail deletion.
  t=api('POST','/tasks',{'title':'Browser detail delete','due':'2027-12-01T15:00:00+03:00'}).json()
  page.goto(BASE+f'/task.html?id={t["id"]}');page.locator('#delete-task').click();confirm();page.wait_for_url('**/tasks.html');assert api('GET',f'/tasks/{t["id"]}').status==404

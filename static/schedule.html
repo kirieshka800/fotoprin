@@ -6,6 +6,7 @@
 <title>График работы · Фотопринт AI</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap&subset=cyrillic" rel="stylesheet">
+<script>try{if(localStorage.getItem('fp_theme')==='dark'){document.documentElement.setAttribute('data-theme','dark')}}catch(e){}</script>
 <link rel="stylesheet" href="styles.css">
 </head>
 <body data-nav="schedule" data-title="График работы">
@@ -26,7 +27,7 @@
   <select class="select white" id="view" style="width:150px;flex:none" aria-label="Период"><option value="5">Неделя</option><option value="7">7 дней</option></select>
 </div>
 <div class="banner hidden" id="proposal" style="margin-bottom:24px;padding:22px 20px"><div><h3 style="font-size:17px;color:var(--text)" id="proposal-title"></h3><p id="proposal-text" style="font-size:11px"></p></div><div class="head-actions"><button class="btn" id="reject">Отклонить</button><button class="btn primary" id="approve">Утвердить</button></div></div>
-<section class="card table-wrap" style="padding:0 0 10px;overflow-x:auto"><div id="grid"><div class="skeleton" style="margin:24px"></div></div></section>
+<section class="card table-wrap" style="padding:0 0 10px;overflow-x:auto"><div id="grid" data-loader></div></section>
 <div class="grid-2" style="margin-top:24px">
   <section class="card"><h2 style="font-size:20px">Почему такой график?</h2><p id="why" style="margin-top:14px;font-size:12px;color:var(--text-3);line-height:1.35;min-height:60px"></p><a class="link" id="why-link" style="margin-top:16px"></a></section>
   <section class="card"><h2 style="font-size:20px">Перед публикацией</h2><div id="checks" style="margin:14px 0;display:flex;flex-direction:column;gap:10px"></div><p class="hint" style="line-height:1.35">После утверждения сотрудники получают уведомление.<br>До этого действует ранее опубликованный график.</p></section>
@@ -38,6 +39,7 @@
 <script src="config.js"></script>
 <script src="mock-data.js"></script>
 <script src="api.js"></script>
+<script src="interface.js"></script>
 <script src="ui.js"></script>
 <script>
 

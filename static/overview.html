@@ -6,6 +6,7 @@
 <title>Обзор · Фотопринт AI</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap&subset=cyrillic" rel="stylesheet">
+<script>try{if(localStorage.getItem('fp_theme')==='dark'){document.documentElement.setAttribute('data-theme','dark')}}catch(e){}</script>
 <link rel="stylesheet" href="styles.css">
 </head>
 <body data-nav="overview" data-title="Обзор">
@@ -49,14 +50,14 @@
     </section>
     <section class="card">
       <div class="card-head"><h2>Последние встречи</h2><a class="link" href="meetings.html">Все саммари <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a></div>
-      <div id="recent"><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div></div>
+      <div id="recent" data-loader></div>
     </section>
   </div>
   <div class="stack">
     <section class="card">
       <h2 style="font-size:18px">Пока вы были заняты</h2>
       <p class="sub" style="margin-bottom:10px">Ассистент уже позаботился об этом</p>
-      <div id="activity"><div class="skeleton"></div><div class="skeleton"></div></div>
+      <div id="activity" data-loader></div>
       <div class="divider" style="margin-top:30px"></div>
       <a class="link" href="notifications.html">Вся история действий <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
     </section>
@@ -64,7 +65,7 @@
       <h2 style="font-size:23px;line-height:28px;color:var(--accent-dark);font-weight:600">Меньше рутины.<br>Больше фокуса.</h2>
       <p>Я нахожу договорённости, назначаю задачи<br>и напоминаю о важном. Вы — управляете.</p>
       <div class="setting" style="border:0;padding:22px 0 8px"><b style="color:var(--accent-dark);font-weight:600">Автономный режим</b><button class="switch" role="switch" id="autonomous" aria-checked="false" aria-label="Автономный режим"></button></div>
-      <small style="font-size:10px;color:#6d5b92">Графики — только с вашим подтверждением</small>
+      <small style="font-size:10px;color:var(--tint-text)">Графики — только с вашим подтверждением</small>
     </section>
   </div>
 </div>
@@ -75,6 +76,7 @@
 <script src="config.js"></script>
 <script src="mock-data.js"></script>
 <script src="api.js"></script>
+<script src="interface.js"></script>
 <script src="ui.js"></script>
 <script>
 

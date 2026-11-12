@@ -6,6 +6,7 @@
 <title>Уведомления · Фотопринт AI</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap&subset=cyrillic" rel="stylesheet">
+<script>try{if(localStorage.getItem('fp_theme')==='dark'){document.documentElement.setAttribute('data-theme','dark')}}catch(e){}</script>
 <link rel="stylesheet" href="styles.css">
 </head>
 <body data-nav="notifications" data-title="Уведомления">
@@ -24,7 +25,7 @@
   <a class="btn" href="settings.html#notifications" style="margin-left:auto">Настроить каналы</a>
 </div>
 <div class="grid-main">
-  <section class="card" style="padding:24px 12px"><div id="list" style="padding:0 0"></div></section>
+  <section class="card" style="padding:24px 12px"><div id="list" style="padding:0 0" data-loader></div></section>
   <div class="stack">
     <section class="card hidden" id="pending"><span class="badge orange sm">Нужно подтверждение</span><h2 style="margin:22px 0 10px;font-size:22px">Изменения графика</h2><p class="hint" id="pending-text"></p><div class="divider"></div>
       <b id="pending-who" style="font-size:12px;font-weight:600"></b><p id="pending-change" style="font-size:12px;color:var(--text-3);line-height:1.5;margin:16px 0"></p>
@@ -40,6 +41,7 @@
 <script src="config.js"></script>
 <script src="mock-data.js"></script>
 <script src="api.js"></script>
+<script src="interface.js"></script>
 <script src="ui.js"></script>
 <script>
 

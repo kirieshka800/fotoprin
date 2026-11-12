@@ -6,6 +6,7 @@
 <title>AI-ассистент · Фотопринт AI</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap&subset=cyrillic" rel="stylesheet">
+<script>try{if(localStorage.getItem('fp_theme')==='dark'){document.documentElement.setAttribute('data-theme','dark')}}catch(e){}</script>
 <link rel="stylesheet" href="styles.css">
 </head>
 <body data-nav="assistant" data-title="AI-ассистент">
@@ -20,7 +21,7 @@
   <span class="status-pill" id="assistant-status">Подключение…</span>
 </div>
 <div class="chat-wrap">
-  <aside class="card dialogs" style="padding:16px"><button class="btn primary lg" id="new-dialog" style="font-size:12px;height:40px;width:100%">+ Новый диалог</button><button class="link" id="clear-dialogs" style="margin-top:14px">Удалить все диалоги</button><div id="dialogs" style="margin-top:18px;flex:1"></div>
+  <aside class="card dialogs" style="padding:16px"><button class="btn primary lg" id="new-dialog" style="font-size:12px;height:40px;width:100%">+ Новый диалог</button><button class="link" id="clear-dialogs" style="margin-top:14px">Удалить все диалоги</button><div id="dialogs" style="margin-top:18px;flex:1" data-loader="sm"></div>
     <div style="border-top:1px solid var(--border);padding-top:16px;margin-top:20px"><b style="font-size:11px;font-weight:600">Доступ к контексту</b><p class="hint" id="context-note" style="margin-top:8px;font-size:9px"></p></div></aside>
   <section class="card chat" style="padding:24px 24px 16px">
     <div class="chat-head"><h2 id="chat-title">&nbsp;</h2><span class="badge sm" id="chat-context" style="height:26px"></span></div>
@@ -37,6 +38,7 @@
 <script src="config.js"></script>
 <script src="mock-data.js"></script>
 <script src="api.js"></script>
+<script src="interface.js"></script>
 <script src="ui.js"></script>
 <script src="assistant.js"></script>
 </body>

@@ -6,6 +6,7 @@
 <title>Подробности задачи · Фотопринт AI</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap&subset=cyrillic" rel="stylesheet">
+<script>try{if(localStorage.getItem('fp_theme')==='dark'){document.documentElement.setAttribute('data-theme','dark')}}catch(e){}</script>
 <link rel="stylesheet" href="styles.css">
 </head>
 <body data-nav="tasks" data-title="Подробности задачи">
@@ -27,11 +28,11 @@
       <p id="description" style="font-size:13px;line-height:1.35;max-width:520px"></p>
       <div class="quote hidden" id="quote"><b id="quote-title"></b><small id="quote-text"></small></div>
       <h3 style="margin:22px 0 4px;font-size:16px;font-weight:600">Что нужно сделать</h3>
-      <div class="checklist" id="checklist"></div>
+      <div class="checklist" id="checklist" data-loader="sm"></div>
     </section>
     <section class="card" style="padding:0 24px 24px">
       <div class="tabs" style="gap:30px" id="tabs"><button class="tab active" data-tab="talk" style="font-size:17px;font-weight:600;color:var(--text);border-color:transparent">Обсуждение</button><button class="tab" data-tab="history" style="font-size:11px;padding-top:18px">История</button></div>
-      <div id="tab-talk"><div id="comments"></div>
+      <div id="tab-talk"><div id="comments" data-loader="sm"></div>
         <div class="comment-box"><textarea id="comment-text" placeholder="Добавить комментарий…" aria-label="Комментарий"></textarea><button class="btn primary" id="comment-send" disabled style="height:40px">Отправить</button></div></div>
       <div id="tab-history" class="hidden"></div>
     </section>
@@ -44,7 +45,7 @@
         <div class="field"><label>Статус</label><select class="select" id="status"></select></div>
         <div class="field"><label>Приоритет</label><select class="select" id="priority" style="width:150px"></select></div>
       </div></section>
-    <section class="card"><h2 style="font-size:19px;margin-bottom:12px">Напоминание</h2><div id="reminder"></div></section>
+    <section class="card"><h2 style="font-size:19px;margin-bottom:12px">Напоминание</h2><div id="reminder" data-loader="sm"></div></section>
     <section class="card tint hidden" id="schedule-link"><h3>Связано с графиком</h3><p id="schedule-text"></p><a class="btn primary" href="schedule.html" style="margin-top:14px;width:100%">Открыть график <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a></section>
   </div>
 </div>
@@ -55,6 +56,7 @@
 <script src="config.js"></script>
 <script src="mock-data.js"></script>
 <script src="api.js"></script>
+<script src="interface.js"></script>
 <script src="ui.js"></script>
 <script>
 
@@ -96,7 +98,7 @@ function fill() {
 function renderChecklist() {
   var html = '';
   for (var i = 0; i < task.checklist.length; i++) {
-    html += '<label class="check" style="gap:12px;font-size:12px;color:var(--text-3)"><input type="checkbox" data-index="' + i + '"' + (task.checklist[i].done ? ' checked' : '') + '>' + esc(task.checklist[i].text) + '</label>';
+    html += '<label class="cl-checkbox" style="font-size:12px;color:var(--text-3)"><input type="checkbox" data-index="' + i + '"' + (task.checklist[i].done ? ' checked' : '') + '><span>' + esc(task.checklist[i].text) + '</span></label>';
   }
   if (task.checklist.length === 0) { html = '<p class="muted" style="font-size:12px">Шагов пока нет.</p>'; }
   $('#checklist').innerHTML = html;

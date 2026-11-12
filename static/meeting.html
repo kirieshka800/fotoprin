@@ -6,6 +6,7 @@
 <title>Саммари встречи · Фотопринт AI</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap&subset=cyrillic" rel="stylesheet">
+<script>try{if(localStorage.getItem('fp_theme')==='dark'){document.documentElement.setAttribute('data-theme','dark')}}catch(e){}</script>
 <link rel="stylesheet" href="styles.css">
 </head>
 <body data-nav="meetings" data-title="Саммари встречи">
@@ -28,19 +29,22 @@
       <section class="card player" style="padding:20px 24px">
         <button class="play" id="play" aria-label="Воспроизвести"><svg class="i" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></button>
         <div style="min-width:120px"><b style="font-size:13px;font-weight:600;display:block">Запись встречи</b><small class="hint" id="time" style="font-size:11px">00:00 / 00:00</small></div>
+        <button class="player-skip" id="back-10" aria-label="Назад на 10 секунд" title="Назад на 10 секунд">↶<small>10</small></button>
         <div class="wave" id="wave" role="slider" aria-label="Перемотка"></div>
+        <button class="player-skip" id="forward-10" aria-label="Вперёд на 10 секунд" title="Вперёд на 10 секунд">↷<small>10</small></button>
+        <div class="volume-control"><button id="mute" class="volume-button" aria-label="Выключить звук" title="Выключить звук">🔊</button><input id="volume" type="range" min="0" max="1" step="0.01" value="0.8" aria-label="Громкость"></div>
         <button class="chip" id="speed" aria-label="Скорость">1×</button>
         <audio id="audio" preload="metadata"></audio>
       </section>
       <section class="card" style="padding:0 24px 24px">
         <div class="tabs" role="tablist" id="tabs"><button class="tab active" data-tab="summary">Саммари</button><button class="tab" data-tab="transcript">Расшифровка</button><button class="tab" data-tab="people" id="people-tab">Участники</button></div>
-        <div id="tab-summary"></div><div id="tab-transcript" class="hidden"></div><div id="tab-people" class="hidden"></div>
+        <div id="tab-summary" data-loader></div><div id="tab-transcript" class="hidden"></div><div id="tab-people" class="hidden"></div>
       </section>
     </div>
     <div class="stack">
       <section class="card">
         <h2 style="font-size:19px">Из разговора — в дело</h2><p class="sub" id="tasks-note" style="color:var(--green);font-size:11px"></p>
-        <div id="tasks" style="margin-top:14px"></div>
+        <div id="tasks" style="margin-top:14px" data-loader="sm"></div>
         <div style="margin-top:18px;display:flex;gap:10px;align-items:center" id="tasks-more"></div>
       </section>
       <section class="card">
@@ -58,6 +62,7 @@
 <script src="config.js"></script>
 <script src="mock-data.js"></script>
 <script src="api.js"></script>
+<script src="interface.js"></script>
 <script src="ui.js"></script>
 <script>
 
@@ -126,6 +131,7 @@ function showReady() {
   renderSummary(); renderTranscript(); renderPeople(); buildWave(); loadTasks();
   $('#play').disabled = !meeting.audioUrl;
   $('#speed').disabled = !meeting.audioUrl;
+  ['back-10','forward-10','mute','volume'].forEach(function(id){$('#'+id).disabled=!meeting.audioUrl;});
   $('#wave').setAttribute('tabindex',meeting.audioUrl ? '0' : '-1');
   if (meeting.audioUrl) { $('#audio').src = meeting.audioUrl; $('#audio').load(); }
   paintPlayer();
@@ -203,7 +209,7 @@ async function loadTasks() {
     var html = '';
     for (var i = 0; i < data.items.length; i++) {
       var task = data.items[i];
-      html += '<div class="task-mini"><label class="check" style="align-items:flex-start"><input type="checkbox" data-task="' + task.id + '"' + (task.status === 'done' ? ' checked' : '') + (task.fromServer ? ' disabled' : '') + '><span><b style="font-size:12px;font-weight:500;display:block">' + esc(task.title) + '</b><small class="hint">' + esc(task.assigneeName) + ' &nbsp;·&nbsp; ' + esc(task.dueText !== undefined ? task.dueText : formatDay(task.due)) + '</small></span></label></div>';
+      html += '<div class="task-mini"><label class="cl-checkbox"><input type="checkbox" data-task="' + task.id + '"' + (task.status === 'done' ? ' checked' : '') + (task.fromServer ? ' disabled' : '') + '><span class="cl-flex"><span><b style="font-size:12px;font-weight:500;display:block">' + esc(task.title) + '</b><small class="hint">' + esc(task.assigneeName) + ' &nbsp;·&nbsp; ' + esc(task.dueText !== undefined ? task.dueText : formatDay(task.due)) + '</small></span></span></label></div>';
     }
     $('#tasks').innerHTML = html;
     var rest = data.total - data.items.length;
@@ -241,6 +247,7 @@ function paintPlayer() {
 }
 function paintPlaying(value) {
   playing=value;
+  $('#wave').classList.toggle('playing',value);
   $('#play').setAttribute('aria-label',value ? 'Пауза' : 'Воспроизвести');
   $('#play').innerHTML=value ? '<svg class="i" viewBox="0 0 24 24"><path d="M8 5v14M16 5v14"/></svg>' : '<svg class="i" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>';
 }
@@ -252,6 +259,7 @@ function setPlaying(value) {
   var started=audio.play();
   if (started && started.catch){started.catch(function(){paintPlaying(false);showError(new Error('Не удалось воспроизвести запись. Проверьте наличие файла и поддерживаемый формат аудио.'));});}
 }
+function updateMuteButton() { var audio = $('#audio'); var muted = audio.muted || audio.volume === 0; $('#mute').textContent = muted ? '🔇' : (audio.volume < 0.5 ? '🔉' : '🔊'); $('#mute').setAttribute('aria-label', muted ? 'Включить звук' : 'Выключить звук'); }
 function seekTo(seconds) {
   var audio=$('#audio'),total=totalSeconds();
   if (!meeting || !meeting.audioUrl || !Number.isFinite(seconds) || total<=0 || audio.readyState<1){return;}
@@ -263,8 +271,15 @@ document.addEventListener('DOMContentLoaded', function () {
   $('#delete-summary').addEventListener('click',function(){if(!meeting){return;}confirmRemoval('Удалить саммари?', 'Саммари встречи «'+meeting.title+'» будет удалено. Встреча, аудио, расшифровка и задачи сохранятся.',async function(){await API.deleteSummary(meeting.id);window.location.reload();});});
   $('#delete-meeting').addEventListener('click',function(){if(!meeting){return;}confirmRemoval('Удалить встречу?', 'Встреча «'+meeting.title+'», саммари, расшифровка и аудиофайл будут удалены. Связанные задачи сохранятся.',async function(){await API.deleteMeeting(meeting.id);window.location.href='meetings.html';});});
   loadMeeting();
+  $('#back-10').addEventListener('click', function () { seekTo(Math.max(0, currentSeconds() - 10)); });
+  $('#forward-10').addEventListener('click', function () { seekTo(Math.min(totalSeconds(), currentSeconds() + 10)); });
+  $('#volume').addEventListener('input', function (event) { $('#audio').volume = Number(event.currentTarget.value); $('#audio').muted = false; updateMuteButton(); });
+  $('#audio').volume = 0.8;
+  $('#mute').addEventListener('click', function () { $('#audio').muted = !$('#audio').muted; updateMuteButton(); });
   $('#play').addEventListener('click', function () { setPlaying(!playing); });
   var audio=$('#audio');
+  audio.addEventListener('volumechange',function(){ $('#volume').value=String(audio.volume); updateMuteButton(); });
+  updateMuteButton();
   ['timeupdate','loadedmetadata','durationchange','loadeddata','seeked'].forEach(function(event){audio.addEventListener(event,paintPlayer);});
   audio.addEventListener('play',function(){paintPlaying(true);});
   audio.addEventListener('pause',function(){paintPlaying(false);});

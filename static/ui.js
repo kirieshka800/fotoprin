@@ -219,7 +219,7 @@ function renderShell() {
     '<div class="side-group"><small>Рабочее пространство</small><span id="workspace-name">&nbsp;</span></div>' +
     '<div class="side-bottom"><a class="nav-item' + (activeKey === 'settings' ? ' active' : '') + '" href="settings.html">' + icon('gear') + '<span>Настройки</span></a>' +
     '<a class="user-card" href="settings.html"><b id="user-name">&nbsp;</b><small id="user-role">&nbsp;</small></a>' +
-    '<a class="nav-item" href="login.html" id="logout"><span>Выйти</span></a></div>';
+    THEME_SWITCH_HTML + '<a class="nav-item" href="login.html" id="logout"><span>Выйти</span></a></div>';
 
   $('#topbar').innerHTML =
     '<button class="burger" id="burger" aria-label="Меню">' + icon('menu') + '</button>' +
@@ -235,6 +235,7 @@ function renderShell() {
   overlay.addEventListener('click', function () { document.body.classList.remove('nav-open'); });
 
   setupGlobalSearch();
+  setupThemeSwitch();
   fillShellData();
   $('#logout').addEventListener('click', async function (event) {
     event.preventDefault();
@@ -262,6 +263,10 @@ function fillShellData() {
 function setupGlobalSearch() {
   var box = $('#global-search');
   var input = $('input', box);
+  box.setAttribute('role', 'search');
+  input.setAttribute('autocomplete', 'off');
+  input.addEventListener('focus', function () { box.classList.add('is-focused'); });
+  input.addEventListener('blur', function () { box.classList.remove('is-focused'); });
   var run = debounce(function () {
     var text = input.value.trim();
     var old = $('.menu', box);
@@ -269,7 +274,8 @@ function setupGlobalSearch() {
     if (text.length < 2) { return; }
     API.search(text).then(function (results) {
       var menu = document.createElement('div');
-      menu.className = 'menu';
+      menu.className = 'menu search-results';
+      menu.setAttribute('role', 'listbox');
       menu.style.top = '46px'; menu.style.left = '0'; menu.style.right = '0';
       if (results.length === 0) { menu.innerHTML = '<button disabled>Ничего не нашлось</button>'; }
       for (var i = 0; i < results.length; i++) {
@@ -287,6 +293,9 @@ function setupGlobalSearch() {
     }).catch(showError);
   }, 300);
   input.addEventListener('input', run);
+  input.addEventListener('keydown', function (event) {
+    if (event.key === 'Escape') { var menu = $('.menu', box); if (menu) { menu.remove(); } input.blur(); }
+  });
   document.addEventListener('click', function (event) {
     if (!box.contains(event.target)) { var menu = $('.menu', box); if (menu) { menu.remove(); } }
   });

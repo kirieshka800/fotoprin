@@ -6,6 +6,7 @@
 <title>Задачи · Фотопринт AI</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap&subset=cyrillic" rel="stylesheet">
+<script>try{if(localStorage.getItem('fp_theme')==='dark'){document.documentElement.setAttribute('data-theme','dark')}}catch(e){}</script>
 <link rel="stylesheet" href="styles.css">
 </head>
 <body data-nav="tasks" data-title="Задачи">
@@ -26,17 +27,17 @@
   <select class="select white" id="sort" style="width:160px;flex:none" aria-label="Сортировка"><option value="due">По сроку ↓</option><option value="title">По названию</option><option value="status">По статусу</option></select>
 </div>
 <section class="card table-wrap" style="padding:0 20px 18px">
-  <div id="table-box"></div>
+  <div id="table-box" data-loader></div>
   <div class="pager"><span id="shown"></span><nav id="pages" aria-label="Страницы"></nav></div>
 </section>
 <div class="grid-main" style="margin-top:24px;grid-template-columns:minmax(0,1fr) 348px">
   <section class="card scroll-x"><div class="card-head"><h2>График работы</h2><span class="muted" style="font-size:11px" id="week-label"></span></div>
     <div class="banner hidden" id="proposal" style="padding:14px 16px;margin-bottom:12px"><span style="font-size:12px;color:var(--accent-dark)" id="proposal-text"></span></div>
-    <div id="mini-schedule"></div>
+    <div id="mini-schedule" data-loader="sm"></div>
     <div class="divider"></div>
     <div style="display:flex;justify-content:space-between;align-items:center;gap:16px"><span class="hint" id="publish-state"></span><a class="btn primary lg" href="schedule.html" style="font-size:12px">Утвердить график</a></div>
   </section>
-  <section class="card"><div class="card-head"><h2>Напоминания</h2><span class="badge green sm">Авто</span></div><div id="reminders"></div><div class="divider"></div><a class="link" href="settings.html#notifications">Настроить уведомления <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a></section>
+  <section class="card"><div class="card-head"><h2>Напоминания</h2><span class="badge green sm">Авто</span></div><div id="reminders" data-loader="sm"></div><div class="divider"></div><a class="link" href="settings.html#notifications">Настроить уведомления <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a></section>
 </div>
 
 </main>
@@ -45,6 +46,7 @@
 <script src="config.js"></script>
 <script src="mock-data.js"></script>
 <script src="api.js"></script>
+<script src="interface.js"></script>
 <script src="ui.js"></script>
 <script>
 
@@ -75,7 +77,7 @@ function renderTable(items) {
   for (var i = 0; i < items.length; i++) {
     var task = items[i];
     var soon = isDueSoon(task.due) && task.status !== 'done';
-    html += '<tr data-id="' + task.id + '"><td><div style="display:flex;align-items:center;gap:14px"><label class="check"><input type="checkbox" data-done="' + task.id + '"' + (task.status === 'done' ? ' checked' : '') + ' aria-label="Выполнено"></label><span class="t-title">' + esc(task.title) + '</span></div></td>' +
+    html += '<tr data-id="' + task.id + '"><td><div style="display:flex;align-items:center;gap:14px"><label class="cl-checkbox"><input type="checkbox" data-done="' + task.id + '"' + (task.status === 'done' ? ' checked' : '') + ' aria-label="Выполнено"><span></span></label><span class="t-title">' + esc(task.title) + '</span></div></td>' +
       '<td>' + esc(task.assigneeName) + '</td><td class="' + (soon ? 'due-hot' : '') + '">' + esc(formatDateTime(task.due)) + '</td><td>' + statusBadge(task.status) + '</td><td>' + esc(task.source) + '</td><td><button class="btn hidden" data-manager-delete data-delete-task="' + task.id + '" aria-label="Удалить задачу: ' + esc(task.title) + '">Удалить</button></td></tr>';
   }
   $('#table-box').innerHTML = html + '</tbody></table>'; configureDeletionControls();

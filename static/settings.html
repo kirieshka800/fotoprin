@@ -6,6 +6,7 @@
 <title>Настройки · Фотопринт AI</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap&subset=cyrillic" rel="stylesheet">
+<script>try{if(localStorage.getItem('fp_theme')==='dark'){document.documentElement.setAttribute('data-theme','dark')}}catch(e){}</script>
 <link rel="stylesheet" href="styles.css">
 </head>
 <body data-nav="settings" data-title="Настройки">
@@ -36,7 +37,7 @@
     <section class="card"><h2 style="font-size:20px;margin-bottom:22px">Рабочее пространство</h2>
       <div style="display:flex;flex-direction:column;gap:18px"><div class="field"><label>Компания</label><input class="input" id="company"></div><div class="field"><label>Часовой пояс</label><select class="select" id="timezone"></select></div></div>
       <div class="divider" style="margin:22px 0 18px"></div><b id="me-name" style="font-size:13px;font-weight:600"></b><p class="hint" style="margin-top:10px;font-size:11px">Роль: руководитель</p><p class="hint" style="margin-top:8px;font-size:11px">Доступ к управлению: полный</p></section>
-    <section class="card"><div class="card-head"><h2 style="font-size:20px">Команда</h2><span class="badge sm" id="team-count"></span></div><div id="team"></div><button class="link" id="invite" style="margin-top:12px">+ Пригласить</button></section>
+    <section class="card"><div class="card-head"><h2 style="font-size:20px">Команда</h2><span class="badge sm" id="team-count"></span></div><div id="team" data-loader="sm"></div><button class="link" id="invite" style="margin-top:12px">+ Пригласить</button></section>
     <section class="card tint"><h3>Кто может управлять?</h3><p>Руководитель утверждает график.<br>Сотрудник видит свои задачи и смены.</p></section>
   </div>
 </div>
@@ -47,6 +48,7 @@
 <script src="config.js"></script>
 <script src="mock-data.js"></script>
 <script src="api.js"></script>
+<script src="interface.js"></script>
 <script src="ui.js"></script>
 <script>
 
