@@ -143,12 +143,99 @@ fn schedule_action_schema() -> Value {
     schema["properties"]["shifts"]["minItems"] = json!(1);
     schema
 }
-fn wrong_schedule_actions(schedule: bool, plan: &Plan) -> bool {
-    schedule
-        && plan
-            .actions
+// The newest explicit command takes precedence over earlier dialog topics.
+fn requested_action(input: &str) -> Option<&'static str> {
+    let text = input.to_lowercase();
+    let has = |terms: &[&str]| terms.iter().any(|term| text.contains(term));
+    if has(&["задач"]) {
+        if has(&["созда", "добав", "завед", "постав"]) {
+            return Some("create_task");
+        }
+        if has(&["напом", "напомин"]) {
+            return Some("set_reminder");
+        }
+        if has(&["коммент"]) {
+            return Some("add_comment");
+        }
+        if has(&["удали", "удалить"]) {
+            return Some("delete_task");
+        }
+        if has(&[
+            "измени",
+            "перенес",
+            "перенеси",
+            "заверши",
+            "отметь",
+            "назначь",
+        ]) {
+            return Some("update_task");
+        }
+        return None;
+    }
+    if has(&["график", "расписан", "смен"]) {
+        if has(&["опублику", "публикац"]) {
+            return Some("publish_schedule");
+        }
+        if has(&["отклони", "отменить предложение"]) {
+            return Some("reject_schedule");
+        }
+        if has(&["удали смен", "удалить смен"]) {
+            return Some("delete_shift");
+        }
+        if schedule_planning_request(input) {
+            return Some("plan_shifts");
+        }
+    }
+    if has(&["уведомлен"]) && has(&["прочита", "прочтен", "прочтён"])
+    {
+        return Some(if has(&["все", "всё"]) {
+            "read_all_notifications"
+        } else {
+            "read_notifications"
+        });
+    }
+    if has(&["измени", "включи", "отключи", "поменяй", "установи"])
+        && has(&[
+            "настрой",
+            "компани",
+            "часовой пояс",
+            "напоминания",
+            "тихие часы",
+        ])
+    {
+        return Some("update_settings");
+    }
+    if has(&["созда", "добав"]) {
+        if has(&["сотрудник"]) {
+            return Some("create_employee");
+        }
+        if has(&["встреч"]) {
+            return Some("create_meeting");
+        }
+    }
+    if has(&["удали встреч", "удалить встреч"]) {
+        return Some("delete_meeting");
+    }
+    None
+}
+fn request_action_schema(kind: &str) -> Value {
+    if kind == "plan_shifts" {
+        return schedule_action_schema();
+    }
+    actions::schema()["oneOf"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|v| v["properties"]["type"]["const"] == kind)
+        .unwrap()
+        .clone()
+}
+fn wrong_requested_actions(kind: Option<&str>, plan: &Plan) -> bool {
+    kind.is_some_and(|kind| {
+        plan.actions
             .iter()
-            .any(|a| !matches!(a, Action::PlanShifts { .. }))
+            .any(|a| serde_json::to_value(a).unwrap()["type"] != kind)
+    })
 }
 // Do not let a prose-only answer advertise a non-existent confirmation card.
 fn promises_proposal(answer: &str) -> bool {
@@ -329,7 +416,7 @@ async fn prepare_message(
 Команды пользователя «да», «подтверждаю» в тексте не заменяют кнопку; не создавай повторное предложение без необходимости.
 Используй ТОЛЬКО действия из JSON-схемы. Максимум 5 действий. Для графика помещай ВСЕ смены в ОДНО plan_shifts, чтобы пользователь видел и подтверждал весь график.
 Сотрудников и задачи находи по реальным данным; не выдумывай ID. Если имя/запись неоднозначны, спроси уточнение, actions=[]. Недостающие обязательные сведения уточняй. Если требуется запись вне выборки, попроси ID или открыть раздел.
-Для создания задачи нужен срок (RFC3339 с поясом); относительные даты считай от текущего времени. Если пользователь назвал только дату, предложи 18:00 местного времени и явно скажи об этом. Ответственный может отсутствовать (null), приоритет по умолчанию Обычный. Для изменения задачи заполняй только запрошенные поля.
+Когда пользователь просит создать задачу, верни create_task, даже если прежде обсуждался график. Для «без ответственного» используй assigneeId=null. Название и описание бери из текущего запроса. Не подменяй задачу публикацией графика. Для создания задачи нужен срок (RFC3339 с поясом); относительные даты считай от текущего времени. Если пользователь назвал только дату, предложи 18:00 местного времени и явно скажи об этом. Ответственный может отсутствовать (null), приоритет по умолчанию Обычный. Для изменения задачи заполняй только запрошенные поля.
 Для смен нужны ТОЛЬКО сотрудник, даты, начало и конец; если эти сведения есть в текущем запросе ИЛИ истории — СРАЗУ верни action plan_shifts. Не спрашивай необязательные сведения о встречах, отдыхе, пожеланиях и перерывах. «Для меня» означает employeeId текущего пользователя, даже если имя в склонении («Федора») отличается от имени справочника («Федя»). Диапазон 16.11–20.11 включает каждый день с 16 по 20 ноября. Не добавляй перерывы, выходные и другие условия, которых пользователь не просил. Отсутствующие обязательные сведения уточни. Учитывай пожелания пользователя, существующий график и факты встреч. Время HH:MM-HH:MM. Отдых минимум 12 часов, включая ночные смены. Не более 140 смен за период до 32 дней. План смен сохраняется без публикации; публикация — отдельное действие.
 Только руководитель может менять график/настройки, добавлять сотрудников, удалять задачи/встречи. Никогда не предлагай повысить права. Создание сотрудника не создаёт учётную запись.
 При создании встречи нужен текст notes и дата с поясом. Обработка создаёт протокол, без автоматического создания задач. Файлы/аудио загружаются на экране new_meeting. Каналы напоминаний пока означают уведомление В ПРИЛОЖЕНИИ, не обещай реальную почту/Telegram.
@@ -356,32 +443,39 @@ openSections — список нужных пользователю раздел
         input = json!(input)
     );
     let mut schema = json!({"type":"object","properties":{"answer":{"type":"string"},"actions":{"type":"array","maxItems":5,"items":actions::schema()},"openSections":{"type":"array","items":{"enum":["overview","tasks","schedule","meetings","new_meeting","notifications","settings"]}}},"required":["answer","actions"],"additionalProperties":false});
-    let schedule_request = schedule_planning_request(input);
-    if schedule_request {
-        schema["properties"]["actions"]["items"] = schedule_action_schema();
-        schema["properties"]["actions"]["maxItems"] = json!(1);
+    let requested = requested_action(input);
+    if let Some(kind) = requested {
+        schema["properties"]["actions"]["items"] = request_action_schema(kind);
+        if kind == "plan_shifts" {
+            schema["properties"]["actions"]["maxItems"] = json!(1);
+        }
     }
     let raw = crate::ai::generate_json(prompt.clone(), schema.clone())
         .await
         .map_err(|e| model_error(format!("Ассистент недоступен: {e}")))?;
     let mut plan:Plan=serde_json::from_value(raw).map_err(|_|model_error("Модель вернула неподдерживаемое действие или неверные параметры. Попробуйте уточнить запрос."))?;
     if (plan.actions.is_empty() && promises_proposal(&plan.answer))
-        || wrong_schedule_actions(schedule_request, &plan)
+        || wrong_requested_actions(requested, &plan)
     {
         schema["properties"]["actions"]["minItems"] = json!(1);
-        let repair=format!("{prompt}\nИСПРАВЛЕНИЕ ФОРМАТА: предыдущий ответ не содержал нужных действий или подменил их посторонними. Если пользователь просит график, запрещено читать уведомления, менять задачи и выполнять любые другие операции: верни ТОЛЬКО plan_shifts со сменами. На основе запроса и истории сформируй конкретные действия. actions НЕ МОЖЕТ быть пустым. Сохрани точные даты, сотрудника и время пользователя. Не добавляй обед или перерывы. Ответ должен содержать настоящий plan_shifts для графика или другое соответствующее действие.");
+        let allowed = requested.unwrap_or("выбери соответствующее последнему запросу действие");
+        let repair=format!("{prompt}\nПоследний запрос имеет приоритет над историей. Разрешённая операция: {allowed}. Запрос создания задачи требует create_task; запрещено публиковать график или читать уведомления вместо задачи. ИСПРАВЛЕНИЕ ФОРМАТА: предыдущий ответ не содержал нужных действий или подменил их посторонними. Если пользователь просит график, запрещено читать уведомления, менять задачи и выполнять любые другие операции: верни ТОЛЬКО plan_shifts со сменами. На основе запроса и истории сформируй конкретные действия. actions НЕ МОЖЕТ быть пустым. Сохрани точные даты, сотрудника и время пользователя. Не добавляй обед или перерывы. Ответ должен содержать настоящий plan_shifts для графика или другое соответствующее действие.");
         let raw = crate::ai::generate_json(repair, schema)
             .await
             .map_err(|e| model_error(format!("Не удалось подготовить карточку действия: {e}")))?;
         plan = serde_json::from_value(raw)
             .map_err(|_| model_error("Модель не смогла подготовить параметры действия"))?;
-        if wrong_schedule_actions(schedule_request, &plan) {
-            return Err(model_error("Модель вернула действие, не соответствующее запросу графика. Посторонние действия не сохранены. Повторите запрос."));
+        if wrong_requested_actions(requested, &plan) {
+            return Err(model_error("Модель вернула действие, не соответствующее последнему запросу. Посторонние действия не сохранены. Повторите запрос."));
         }
         if plan.actions.is_empty() {
             return Err(model_error("Модель описала предложение, но не сформировала действия. Карточка не создана и данные не изменены. Уточните запрос или повторите попытку."));
         }
     }
+    // Identical model actions represent one proposed operation, not repeated writes.
+    let mut seen = std::collections::BTreeSet::new();
+    plan.actions
+        .retain(|a| seen.insert(serde_json::to_string(a).unwrap()));
     if !plan.actions.is_empty() {
         plan.answer = if let Some(Action::PlanShifts { shifts }) = plan
             .actions

@@ -94,3 +94,24 @@ fn scheduling_requests_only_allow_shift_plans() {
     assert_eq!(schema["properties"]["type"]["const"], "plan_shifts");
     assert_eq!(schema["properties"]["shifts"]["minItems"], 1);
 }
+
+#[test]
+fn explicit_task_creation_cannot_select_schedule_or_notifications() {
+    assert_eq!(
+        super::requested_action("Создай задачу проверить печать с высоким приоритетом"),
+        Some("create_task")
+    );
+    assert_eq!(
+        super::requested_action("Создай задачу составить график"),
+        Some("create_task")
+    );
+    assert_eq!(
+        super::requested_action("Опубликуй график на неделю"),
+        Some("publish_schedule")
+    );
+    assert_eq!(
+        super::requested_action("Составь график на неделю"),
+        Some("plan_shifts")
+    );
+    assert_eq!(super::requested_action("Покажи задачи"), None);
+}

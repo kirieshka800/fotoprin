@@ -305,4 +305,30 @@ class AssistantTests(unittest.TestCase):
         self.assertEqual(status,502,r)
         self.assertEqual(req(self.c,'GET',f'/assistant/dialogs/{d["id"]}')[1]['messages'],[])
 
+    def test_23_task_creation_after_schedule_cannot_publish_schedule(self):
+        _,d=req(self.c,'POST','/assistant/dialogs',{})
+        model([], 'Укажите время смен.')
+        req(self.c,'POST',f'/assistant/dialogs/{d["id"]}/messages',{'text':'Составь график на неделю'})
+        wanted=self.create_action(f'Печать после графика {time.time_ns()}')
+        wrong={'answer':'Подготовил предложение','actions':[{'type':'publish_schedule','weekStart':'2026-11-16'}]*2}
+        correct={'answer':'Подготовил задачу','actions':[wanted,wanted]}
+        data=json.dumps({'_sequence':[wrong,correct]}).encode()
+        urllib.request.urlopen(urllib.request.Request(MODEL+'/next',data=data,headers={'Content-Type':'application/json'})).read()
+        status,m=req(self.c,'POST',f'/assistant/dialogs/{d["id"]}/messages',{'text':'Создай задачу «'+wanted['title']+'» без ответственного, на 1 декабря 2027 в 15:00, высокий приоритет'})
+        self.assertEqual(status,200,m)
+        self.assertEqual([p['kind'] for p in m['proposals']],['create_task'])
+        payload=json.load(urllib.request.urlopen(MODEL+'/last'))
+        self.assertEqual(payload['format']['properties']['actions']['items']['properties']['type']['const'],'create_task')
+        status,p=self.confirm(m['proposals'][0]); self.assertEqual(status,200,p)
+        _,task=req(self.c,'GET',f'/tasks/{p["result"]["id"]}')
+        self.assertEqual(task['title'],wanted['title'])
+        self.assertEqual(task['priority'],'Высокий')
+
+    def test_24_task_request_rejects_persistent_wrong_actions(self):
+        _,d=req(self.c,'POST','/assistant/dialogs',{})
+        model([{'type':'publish_schedule','weekStart':'2026-11-16'}])
+        status,r=req(self.c,'POST',f'/assistant/dialogs/{d["id"]}/messages',{'text':'Создай задачу проверить печать на завтра'})
+        self.assertEqual(status,502,r)
+        self.assertEqual(req(self.c,'GET',f'/assistant/dialogs/{d["id"]}')[1]['messages'],[])
+
 if __name__=='__main__': unittest.main(verbosity=2)

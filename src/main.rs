@@ -445,6 +445,7 @@ async fn main() {
         .merge(protected)
         .fallback_service(ServeDir::new(&static_dir))
         .layer(DefaultBodyLimit::max(100 * 1024 * 1024))
+        .layer(middleware::from_fn(disable_browser_cache))
         .with_state(state);
 
     let address = "127.0.0.1:8081";
@@ -452,6 +453,13 @@ async fn main() {
 
     println!("🚀 Сервер запущен на http://{}", address);
     axum::serve(listener, app).await.unwrap();
+}
+
+// Always serve the current authenticated application at the ordinary URLs.
+async fn disable_browser_cache(request: axum::extract::Request, next: middleware::Next) -> axum::response::Response {
+    let mut response=next.run(request).await;
+    response.headers_mut().insert(header::CACHE_CONTROL, axum::http::HeaderValue::from_static("no-store"));
+    response
 }
 
 async fn home_redirect() -> Redirect {

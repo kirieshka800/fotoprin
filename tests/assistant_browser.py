@@ -19,7 +19,9 @@ def run():
         page=context.new_page()
         errors=[]
         page.on('pageerror',lambda e:errors.append(str(e)))
-        page.goto(BASE+'/assistant.html')
+        response=page.goto(BASE+'/assistant.html')
+        assert response.headers.get('cache-control')=='no-store', 'HTML must not use old cached UI'
+        assert context.request.get(BASE+'/assistant.js').headers.get('cache-control')=='no-store'
         page.locator('#input').wait_for()
         page.wait_for_function('current !== null')
         title=f'Задача браузера {time.time_ns()}'
