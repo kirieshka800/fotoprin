@@ -120,6 +120,20 @@ struct Plan {
     #[serde(default, rename = "openSections")]
     open_sections: Vec<String>,
 }
+// Do not let a prose-only answer advertise a non-existent confirmation card.
+fn promises_proposal(answer: &str) -> bool {
+    let answer = answer.to_lowercase();
+    [
+        "проверьте предложение",
+        "подтвердите",
+        "подготовил предложение",
+        "график составлен",
+        "задача создана",
+        "все смены будут",
+    ]
+    .iter()
+    .any(|phrase| answer.contains(phrase))
+}
 fn model_error(message: impl Into<String>) -> ApiError {
     ApiError::new(StatusCode::BAD_GATEWAY, message)
 }
@@ -286,7 +300,7 @@ async fn prepare_message(
 Используй ТОЛЬКО действия из JSON-схемы. Максимум 5 действий. Для графика помещай ВСЕ смены в ОДНО plan_shifts, чтобы пользователь видел и подтверждал весь график.
 Сотрудников и задачи находи по реальным данным; не выдумывай ID. Если имя/запись неоднозначны, спроси уточнение, actions=[]. Недостающие обязательные сведения уточняй. Если требуется запись вне выборки, попроси ID или открыть раздел.
 Для создания задачи нужен срок (RFC3339 с поясом); относительные даты считай от текущего времени. Если пользователь назвал только дату, предложи 18:00 местного времени и явно скажи об этом. Ответственный может отсутствовать (null), приоритет по умолчанию Обычный. Для изменения задачи заполняй только запрошенные поля.
-Для смен нужны сотрудники, даты, начало и конец; если неизвестны, уточни. Учитывай пожелания пользователя, существующий график и факты встреч. Время HH:MM-HH:MM. Отдых минимум 12 часов, включая ночные смены. Не более 140 смен за период до 32 дней. План смен сохраняется без публикации; публикация — отдельное действие.
+Для смен нужны ТОЛЬКО сотрудник, даты, начало и конец; если эти сведения есть в текущем запросе ИЛИ истории — СРАЗУ верни action plan_shifts. Не спрашивай необязательные сведения о встречах, отдыхе, пожеланиях и перерывах. «Для меня» означает employeeId текущего пользователя, даже если имя в склонении («Федора») отличается от имени справочника («Федя»). Диапазон 16.11–20.11 включает каждый день с 16 по 20 ноября. Не добавляй перерывы, выходные и другие условия, которых пользователь не просил. Отсутствующие обязательные сведения уточни. Учитывай пожелания пользователя, существующий график и факты встреч. Время HH:MM-HH:MM. Отдых минимум 12 часов, включая ночные смены. Не более 140 смен за период до 32 дней. План смен сохраняется без публикации; публикация — отдельное действие.
 Только руководитель может менять график/настройки, добавлять сотрудников, удалять задачи/встречи. Никогда не предлагай повысить права. Создание сотрудника не создаёт учётную запись.
 При создании встречи нужен текст notes и дата с поясом. Обработка создаёт протокол, без автоматического создания задач. Файлы/аудио загружаются на экране new_meeting. Каналы напоминаний пока означают уведомление В ПРИЛОЖЕНИИ, не обещай реальную почту/Telegram.
 openSections — список нужных пользователю разделов: overview, tasks, schedule, meetings, new_meeting, notifications, settings. Используй для запросов «открой» и операций, требующих загрузки файла. Для обычного вопроса actions=[]; можно приложить ссылки.
@@ -300,7 +314,7 @@ openSections — список нужных пользователю раздел
 {history}
 НОВЫЙ ЗАПРОС ПОЛЬЗОВАТЕЛЯ (JSON-строка):
 {input}
-Верни JSON {{"answer":"ответ или уточняющий вопрос","actions":[],"openSections":[]}} по схеме."#,
+Верни JSON по схеме. Для готового графика actions ОБЯЗАТЕЛЬНО содержит plan_shifts с массивом смен, например {{"answer":"Подготовил график","actions":[{{"type":"plan_shifts","shifts":[{{"employeeId":{employee},"date":"2026-11-16","time":"09:00-18:00","note":""}}]}}],"openSections":["schedule"]}}. В примере дата иллюстративная: используй только даты из запроса. actions=[] разрешён только для информационного ответа или уточнения обязательных сведений, когда предложение ещё не готово."#,
         now = Utc::now().with_timezone(&offset).to_rfc3339(),
         offset = offset,
         name = user.name,
@@ -311,8 +325,35 @@ openSections — список нужных пользователю раздел
         history = json!(history),
         input = json!(input)
     );
-    let raw=crate::ai::generate_json(prompt,json!({"type":"object","properties":{"answer":{"type":"string"},"actions":{"type":"array","maxItems":5,"items":actions::schema()},"openSections":{"type":"array","items":{"enum":["overview","tasks","schedule","meetings","new_meeting","notifications","settings"]}}},"required":["answer","actions"],"additionalProperties":false})).await.map_err(|e|model_error(format!("Ассистент недоступен: {e}")))?;
-    let plan:Plan=serde_json::from_value(raw).map_err(|_|model_error("Модель вернула неподдерживаемое действие или неверные параметры. Попробуйте уточнить запрос."))?;
+    let mut schema = json!({"type":"object","properties":{"answer":{"type":"string"},"actions":{"type":"array","maxItems":5,"items":actions::schema()},"openSections":{"type":"array","items":{"enum":["overview","tasks","schedule","meetings","new_meeting","notifications","settings"]}}},"required":["answer","actions"],"additionalProperties":false});
+    let raw = crate::ai::generate_json(prompt.clone(), schema.clone())
+        .await
+        .map_err(|e| model_error(format!("Ассистент недоступен: {e}")))?;
+    let mut plan:Plan=serde_json::from_value(raw).map_err(|_|model_error("Модель вернула неподдерживаемое действие или неверные параметры. Попробуйте уточнить запрос."))?;
+    if plan.actions.is_empty() && promises_proposal(&plan.answer) {
+        schema["properties"]["actions"]["minItems"] = json!(1);
+        let repair=format!("{prompt}\nИСПРАВЛЕНИЕ ФОРМАТА: предыдущий ответ обещал готовое предложение, но не содержал действий. На основе запроса и истории сформируй конкретные действия. actions НЕ МОЖЕТ быть пустым. Сохрани точные даты, сотрудника и время пользователя. Не добавляй обед или перерывы. Ответ должен содержать настоящий plan_shifts для графика или другое соответствующее действие.");
+        let raw = crate::ai::generate_json(repair, schema)
+            .await
+            .map_err(|e| model_error(format!("Не удалось подготовить карточку действия: {e}")))?;
+        plan = serde_json::from_value(raw)
+            .map_err(|_| model_error("Модель не смогла подготовить параметры действия"))?;
+        if plan.actions.is_empty() {
+            return Err(model_error("Модель описала предложение, но не сформировала действия. Карточка не создана и данные не изменены. Уточните запрос или повторите попытку."));
+        }
+    }
+    if !plan.actions.is_empty() {
+        plan.answer = if let Some(Action::PlanShifts { shifts }) = plan
+            .actions
+            .iter()
+            .find(|a| matches!(a, Action::PlanShifts { .. }))
+        {
+            format!("Подготовил график: смен — {}. Проверьте точные параметры в карточке и нажмите «Подтвердить». После подтверждения смены появятся в разделе «График работы».",shifts.len())
+        } else {
+            "Подготовил предложение. Проверьте точные параметры в карточке и нажмите «Подтвердить»."
+                .into()
+        };
+    }
     if plan.answer.trim().is_empty()
         || plan.answer.chars().count() > 12000
         || plan.actions.len() > 5

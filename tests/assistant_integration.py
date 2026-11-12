@@ -28,7 +28,8 @@ def req(c, method, path, body=None):
         raw=e.read()
         return e.code, json.loads(raw) if raw else {}
 
-def model(actions, answer='Подготовил предложение. Проверьте параметры.'):
+def model(actions, answer=None):
+    if answer is None: answer='Подготовил предложение. Проверьте параметры.' if actions else 'Чем помочь?' 
     data=json.dumps({'answer':answer,'actions':actions}).encode()
     with urllib.request.urlopen(urllib.request.Request(MODEL+'/next',data=data,headers={'Content-Type':'application/json'})) as r:
         r.read()
@@ -257,5 +258,31 @@ class AssistantTests(unittest.TestCase):
         finally:
             if url and audio.exists(): audio.unlink()
         self.assertEqual(req(self.c,'GET',f'/meetings/{mid}')[0],404)
+
+    def test_19_empty_proposal_is_repaired_before_showing_confirmation(self):
+        _,e=req(self.c,'POST','/employees',{'name':f'План {time.time_ns()}','position':'Печатник','department':'Производство'})
+        shifts=[{'employeeId':e['id'],'date':f'2027-06-{day:02d}','time':'09:00-18:00','note':''} for day in range(7,12)]
+        first={'answer':'Все смены с 9 до 18. Проверьте предложение и подтвердите.','actions':[]}
+        second={'answer':'Добавлю обед с 13 до 14.','actions':[{'type':'plan_shifts','shifts':shifts}]}
+        _,d=req(self.c,'POST','/assistant/dialogs',{})
+        data=json.dumps({'_sequence':[first,second]}).encode()
+        urllib.request.urlopen(urllib.request.Request(MODEL+'/next',data=data,headers={'Content-Type':'application/json'})).read()
+        status,m=req(self.c,'POST',f'/assistant/dialogs/{d["id"]}/messages',{'text':'Создай график 7–11 июня 2027 с 9 до 18 без перерывов'})
+        self.assertEqual(status,200,m)
+        self.assertEqual(len(m['proposals']),1)
+        self.assertEqual(len(m['proposals'][0]['details']),5)
+        self.assertNotIn('обед',m['text'])
+        _,week=req(self.c,'GET','/schedule?weekStart=2027-06-07')
+        self.assertFalse(any(s['employeeId']==e['id'] for s in week['shifts']))
+        self.assertEqual(self.confirm(m['proposals'][0])[0],200)
+        _,week=req(self.c,'GET','/schedule?weekStart=2027-06-07')
+        self.assertEqual(sum(s['employeeId']==e['id'] for s in week['shifts']),5)
+
+    def test_20_empty_proposal_never_pretends_confirmation_exists(self):
+        _,d=req(self.c,'POST','/assistant/dialogs',{})
+        model([], 'Проверьте предложение и подтвердите график.')
+        status,r=req(self.c,'POST',f'/assistant/dialogs/{d["id"]}/messages',{'text':'Создай график'})
+        self.assertEqual(status,502,r)
+        self.assertEqual(req(self.c,'GET',f'/assistant/dialogs/{d["id"]}')[1]['messages'],[])
 
 if __name__=='__main__': unittest.main(verbosity=2)

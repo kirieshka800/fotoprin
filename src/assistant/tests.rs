@@ -63,3 +63,19 @@ fn rejection_previews_restoration_and_removal_exactly() {
     assert!(shown.contains("08:00–16:00 → 20:00–08:00"), "{shown}");
     assert!(shown.contains("09:00–18:00 → удалить смену"), "{shown}");
 }
+
+#[test]
+fn empty_confirmation_promise_requires_repair() {
+    assert!(super::promises_proposal(
+        "Все смены будут с 9 до 18. Проверьте предложение и подтвердите."
+    ));
+    assert!(super::promises_proposal(
+        "Подготовил предложение. Проверьте параметры."
+    ));
+    assert!(!super::promises_proposal(
+        "Уточните, пожалуйста, время начала смены?"
+    ));
+    assert!(!super::promises_proposal(
+        "В понедельник работают два сотрудника."
+    ));
+}
