@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Вход · Фотопринт AI</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap&subset=cyrillic" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body data-nav="" data-title="Вход">
+<div class="auth"><div class="card">
+<div style="text-align:center;margin-bottom:26px"><b style="font-size:25px;font-weight:700;letter-spacing:-.3px">фотопринт</b><div class="hint" style="letter-spacing:.4px;text-transform:uppercase;margin-top:6px">AI Workspace</div></div>
+<h2 style="text-align:center;margin-bottom:22px">Вход в рабочее пространство</h2>
+<form id="form" style="display:flex;flex-direction:column;gap:18px" novalidate>
+  <div class="field" id="f-email"><label for="email">Электронная почта</label><input class="input" id="email" type="email" autocomplete="username" placeholder="name@company.ru"><span class="field-error">Введите почту</span></div>
+  <div class="field" id="f-pass"><label for="password">Пароль</label><input class="input" id="password" type="password" autocomplete="current-password"><span class="field-error">Введите пароль</span></div>
+  <button class="btn primary lg" type="submit" id="submit">Войти</button>
+</form>
+<p class="hint" style="text-align:center;margin-top:20px;font-size:13px">Нет аккаунта? <a class="link" href="register.html">Зарегистрироваться</a></p>
+</div></div>
+<script src="config.js"></script><script src="mock-data.js"></script><script src="api.js"></script><script src="ui.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  watchFieldErrors(document);
+  $('#form').addEventListener('submit', async function (event) {
+    event.preventDefault();
+    var email = $('#email').value.trim(), password = $('#password').value;
+    var valid = true;
+    if (!email) { setFieldError($('#f-email'), 'Введите почту'); valid = false; }
+    if (!password) { setFieldError($('#f-pass'), 'Введите пароль'); valid = false; }
+    if (!valid) { return; }
+    setBusy($('#submit'), true, 'Входим…');
+    try {
+      await API.login(email, password);
+      window.location.href = 'overview.html';
+    } catch (error) { setBusy($('#submit'), false); showError(error); }
+  });
+});
+</script>
+</body></html>

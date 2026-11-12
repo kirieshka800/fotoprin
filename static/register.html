@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Регистрация · Фотопринт AI</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap&subset=cyrillic" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body data-nav="" data-title="Регистрация">
+<div class="auth"><div class="card">
+<div style="text-align:center;margin-bottom:26px"><b style="font-size:25px;font-weight:700;letter-spacing:-.3px">фотопринт</b><div class="hint" style="letter-spacing:.4px;text-transform:uppercase;margin-top:6px">AI Workspace</div></div>
+<h2 style="text-align:center;margin-bottom:22px">Создание аккаунта</h2>
+<form id="form" style="display:flex;flex-direction:column;gap:18px" novalidate>
+  <div class="field" id="f-name"><label for="name">Имя и фамилия</label><input class="input" id="name" type="text" autocomplete="name" placeholder="Анна Смирнова"><span class="field-error">Введите имя</span></div>
+  <div class="field" id="f-email"><label for="email">Электронная почта</label><input class="input" id="email" type="email" autocomplete="username" placeholder="name@company.ru"><span class="field-error">Введите почту</span></div>
+  <div class="field" id="f-pass"><label for="password">Пароль</label><input class="input" id="password" type="password" autocomplete="new-password" placeholder="Не короче 8 символов"><span class="field-error">Введите пароль</span></div>
+  <div class="field" id="f-pass2"><label for="password2">Повторите пароль</label><input class="input" id="password2" type="password" autocomplete="new-password"><span class="field-error">Повторите пароль</span></div>
+  <button class="btn primary lg" type="submit" id="submit">Зарегистрироваться</button>
+</form>
+<p class="hint" style="text-align:center;margin-top:20px;font-size:13px">Уже есть аккаунт? <a class="link" href="login.html">Войти</a></p>
+</div></div>
+<script src="config.js"></script><script src="mock-data.js"></script><script src="api.js"></script><script src="ui.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  watchFieldErrors(document);
+  $('#form').addEventListener('submit', async function (event) {
+    event.preventDefault();
+    var name = $('#name').value.trim(), email = $('#email').value.trim();
+    var password = $('#password').value, password2 = $('#password2').value;
+    var valid = true;
+    if (!name) { setFieldError($('#f-name'), 'Введите имя'); valid = false; }
+    if (!email || email.indexOf('@') < 1 || email.indexOf('.') < 0) { setFieldError($('#f-email'), 'Введите корректную почту'); valid = false; }
+    if (password.length < 8) { setFieldError($('#f-pass'), 'Пароль должен быть не короче 8 символов'); valid = false; }
+    if (password2 !== password) { setFieldError($('#f-pass2'), 'Пароли не совпадают'); valid = false; }
+    if (!valid) { return; }
+    setBusy($('#submit'), true, 'Создаём аккаунт…');
+    try {
+      await API.register(name, email, password);
+      window.location.href = 'overview.html';
+    } catch (error) { setBusy($('#submit'), false); showError(error); }
+  });
+});
+</script>
+</body></html>

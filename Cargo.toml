@@ -1,0 +1,42 @@
+[package]
+name = "fotoprint-backend"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Веб-фреймворк и асинхронность
+axum = { version = "0.7", features = ["multipart"] }
+tokio = { version = "1.0", features = ["full"] }
+tower-http = { version = "0.5", features = ["fs"] }
+
+
+# База данных PostgreSQL
+sqlx = { version = "0.8", features = [
+    "runtime-tokio",
+    "tls-rustls",
+    "postgres",
+    "macros",
+    "chrono",
+    "json"
+] }
+
+# Сериализация / Десериализация JSON и даты
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+chrono = { version = "0.4", features = ["serde"] }
+
+# Чтение переменных из .env файла
+dotenvy = "0.15"
+
+# Клиент для HTTP-запросов (потребуется для подключения к Ollama)
+reqwest = { version = "0.12", features = ["json", "multipart"] }
+
+# Чтение .docx (это zip-архив с XML) и .pdf
+zip = { version = "2", default-features = false, features = ["deflate"] }
+pdf-extract = "0.7"
+
+# Вход и регистрация: хеш паролей, случайные токены сессий
+argon2 = "0.5"
+rand = "0.8"
+sha2 = "0.10"
+hex = "0.4"

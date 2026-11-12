@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Уведомления · Фотопринт AI</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap&subset=cyrillic" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body data-nav="notifications" data-title="Уведомления">
+<div class="app">
+<aside class="sidebar" id="sidebar"></aside>
+<div>
+<header class="topbar" id="topbar"></header>
+<main class="page">
+
+<div class="page-head">
+  <div><div class="eyebrow">Важное не потеряется</div><h1>Уведомления</h1><p class="page-sub">Результаты работы ассистента и события команды.</p></div>
+  <div class="head-actions"><button class="btn" id="read-all">Прочитать всё</button></div>
+</div>
+<div class="row" style="align-items:center;margin-bottom:22px;flex-wrap:wrap">
+  <div class="chips" id="filters" style="gap:20px"><button class="chip active" data-filter="all">Все</button><button class="chip" data-filter="unread">Непрочитанные</button><button class="chip" data-filter="ai">Только от AI</button></div>
+  <a class="btn" href="settings.html#notifications" style="margin-left:auto">Настроить каналы</a>
+</div>
+<div class="grid-main">
+  <section class="card" style="padding:24px 12px"><div id="list" style="padding:0 0"></div></section>
+  <div class="stack">
+    <section class="card hidden" id="pending"><span class="badge orange sm">Нужно подтверждение</span><h2 style="margin:22px 0 10px;font-size:22px">Изменения графика</h2><p class="hint" id="pending-text"></p><div class="divider"></div>
+      <b id="pending-who" style="font-size:12px;font-weight:600"></b><p id="pending-change" style="font-size:12px;color:var(--text-3);line-height:1.5;margin:16px 0"></p>
+      <p class="hint" style="margin-bottom:16px">Ассистент подготовил проект.<br>Сотрудники ещё не уведомлены.</p><a class="btn primary lg" href="schedule.html" style="width:100%;font-size:12px">Перейти к графику <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a></section>
+    <section class="card hidden" id="next-reminder"><h2 style="font-size:19px">Следующее напоминание</h2><div id="next-time" style="font-size:30px;font-weight:600;color:var(--accent);margin:24px 0 14px"></div><b id="next-title" style="font-size:13px;font-weight:500"></b><p class="hint" id="next-meta" style="margin-top:10px"></p></section>
+    <section class="card tint" id="quiet"><h3 id="quiet-title"></h3><p id="quiet-text"></p></section>
+  </div>
+</div>
+
+</main>
+</div>
+</div>
+<script src="config.js"></script>
+<script src="mock-data.js"></script>
+<script src="api.js"></script>
+<script src="ui.js"></script>
+<script>
+
+var filter = 'all';
+
+async function load() {
+  try {
+    var data = await API.getNotifications(filter);
+    var chips = $all('#filters .chip');
+    chips[0].textContent = 'Все · ' + data.counts.all;
+    chips[1].textContent = 'Непрочитанные · ' + data.counts.unread;
+    chips[2].textContent = 'Только от AI · ' + data.counts.ai;
+    renderList(data.items);
+    renderSide(data);
+  } catch (error) { showError(error); }
+}
+
+function groupTitle(iso) {
+  var d = new Date(iso);
+  var word = dayWord(d);
+  if (word === 'Сегодня') { return 'Сегодня · ' + d.getDate() + ' ' + MONTHS_FULL[d.getMonth()]; }
+  if (word === 'Вчера') { return 'Вчера · ' + d.getDate() + ' ' + MONTHS_FULL[d.getMonth()]; }
+  return d.getDate() + ' ' + MONTHS_FULL[d.getMonth()];
+}
+
+function renderList(items) {
+  if (items.length === 0) { $('#list').innerHTML = '<div class="empty"><h2>Здесь пока пусто</h2><p>Новые события появятся здесь.</p></div>'; return; }
+  var html = '';
+  var lastGroup = '';
+  for (var i = 0; i < items.length; i++) {
+    var item = items[i];
+    var group = groupTitle(item.at);
+    if (group !== lastGroup) { html += '<div class="group-label" style="padding:' + (i === 0 ? '0' : '20px') + ' 12px 0">' + esc(group) + '</div>'; lastGroup = group; }
+    var isToday = dayWord(new Date(item.at)) === 'Сегодня';
+    html += '<div class="notif ' + (item.read ? '' : 'unread') + '" data-id="' + item.id + '" data-href="' + esc(item.href) + '" tabindex="0" role="link"><div class="when">' + (isToday ? formatTime(item.at) : esc(dayWord(new Date(item.at)))) + '</div>' +
+      '<div><b>' + esc(item.title) + '</b><p>' + esc(item.text) + '</p><span class="link">' + esc(item.actionLabel) + ' ' + icon('right') + '</span></div><div class="cat">' + esc(item.category) + '</div></div>';
+  }
+  $('#list').innerHTML = html;
+}
+
+async function openNotice(element) {
+  var id = element.dataset.id, href = element.dataset.href;
+  try { await API.readNotification(id); } catch (error) { /* переход важнее */ }
+  window.location.href = href;
+}
+
+function renderSide(data) {
+  $('#pending').classList.toggle('hidden', !data.pending);
+  if (data.pending) {
+    $('#pending-text').textContent = data.pending.text;
+    $('#pending-who').textContent = data.pending.who;
+    $('#pending-change').innerHTML = 'Было: ' + esc(data.pending.was) + '<br>Предложено: ' + esc(data.pending.now);
+  }
+  $('#next-reminder').classList.toggle('hidden', !data.nextReminder);
+  if (data.nextReminder) { $('#next-time').textContent = data.nextReminder.time; $('#next-title').textContent = data.nextReminder.title; $('#next-meta').textContent = data.nextReminder.meta; }
+}
+
+document.addEventListener('DOMContentLoaded', async function () {
+  load();
+  try {
+    var settings = await API.getSettings();
+    $('#quiet-title').textContent = settings.quietHours.enabled ? 'Тихие часы: ' + settings.quietHours.from + '–' + settings.quietHours.to : 'Тихие часы выключены';
+    $('#quiet-text').innerHTML = settings.quietHours.enabled ? 'Несрочные напоминания подождут утра.<br>Часовой пояс: ' + esc(settings.timezone) + '.' : 'Напоминания приходят в любое время.';
+  } catch (error) { showError(error); }
+  var chips = $all('#filters .chip');
+  for (var i = 0; i < chips.length; i++) {
+    chips[i].addEventListener('click', function (event) {
+      filter = event.currentTarget.dataset.filter;
+      for (var j = 0; j < chips.length; j++) { chips[j].classList.toggle('active', chips[j] === event.currentTarget); }
+      load();
+    });
+  }
+  $('#list').addEventListener('click', function (event) { var row = event.target.closest('.notif'); if (row) { openNotice(row); } });
+  $('#list').addEventListener('keydown', function (event) { if (event.key === 'Enter') { var row = event.target.closest('.notif'); if (row) { openNotice(row); } } });
+  $('#read-all').addEventListener('click', async function () {
+    try { await API.readAllNotifications(); toast('Все уведомления прочитаны'); load(); fillShellData(); $('#nav-unread-dot').classList.add('hidden'); $('#bell-dot').classList.add('hidden'); } catch (error) { showError(error); }
+  });
+});
+
+</script>
+</body>
+</html>

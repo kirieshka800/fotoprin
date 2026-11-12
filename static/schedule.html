@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>График работы · Фотопринт AI</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap&subset=cyrillic" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body data-nav="schedule" data-title="График работы">
+<div class="app">
+<aside class="sidebar" id="sidebar"></aside>
+<div>
+<header class="topbar" id="topbar"></header>
+<main class="page">
+
+<div class="page-head">
+  <div><div class="eyebrow">Планирование команды</div><h1>График работы</h1><p class="page-sub">Баланс смен и загрузки. Без лишних таблиц и переписок.</p></div>
+  <div class="head-actions"><button class="btn" id="generate">Составить с AI</button><button class="btn primary" id="add-shift">+ Добавить смену</button></div>
+</div>
+<div class="row" style="align-items:center;margin-bottom:24px;flex-wrap:wrap">
+  <div class="card" style="padding:0 14px;height:40px;display:flex;align-items:center;gap:14px;border-radius:9px;flex:none"><button class="icon-btn" id="prev" aria-label="Предыдущая неделя"><svg class="i" viewBox="0 0 24 24" style="width:14px;height:14px"><path d="M19 12H5M11 6l-6 6 6 6"/></svg></button><b id="range" style="font-size:12px;min-width:120px;text-align:center"></b><button class="icon-btn" id="next" aria-label="Следующая неделя"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button></div>
+  <button class="btn" id="today" style="flex:none">Сегодня</button>
+  <select class="select white" id="department" style="width:164px;flex:none;margin-left:auto" aria-label="Отдел"></select>
+  <select class="select white" id="view" style="width:150px;flex:none" aria-label="Период"><option value="5">Неделя</option><option value="7">7 дней</option></select>
+</div>
+<div class="banner hidden" id="proposal" style="margin-bottom:24px;padding:22px 20px"><div><h3 style="font-size:17px;color:var(--text)" id="proposal-title"></h3><p id="proposal-text" style="font-size:11px"></p></div><div class="head-actions"><button class="btn" id="reject">Отклонить</button><button class="btn primary" id="approve">Утвердить</button></div></div>
+<section class="card table-wrap" style="padding:0 0 10px;overflow-x:auto"><div id="grid"><div class="skeleton" style="margin:24px"></div></div></section>
+<div class="grid-2" style="margin-top:24px">
+  <section class="card"><h2 style="font-size:20px">Почему такой график?</h2><p id="why" style="margin-top:14px;font-size:12px;color:var(--text-3);line-height:1.35;min-height:60px"></p><a class="link" id="why-link" style="margin-top:16px"></a></section>
+  <section class="card"><h2 style="font-size:20px">Перед публикацией</h2><div id="checks" style="margin:14px 0;display:flex;flex-direction:column;gap:10px"></div><p class="hint" style="line-height:1.35">После утверждения сотрудники получают уведомление.<br>До этого действует ранее опубликованный график.</p></section>
+</div>
+
+</main>
+</div>
+</div>
+<script src="config.js"></script>
+<script src="mock-data.js"></script>
+<script src="api.js"></script>
+<script src="ui.js"></script>
+<script>
+
+var requestedWeek = new URLSearchParams(window.location.search).get('weekStart');
+var requestedDate = requestedWeek && /^\d{4}-\d{2}-\d{2}$/.test(requestedWeek) ? new Date(requestedWeek + 'T12:00:00') : null;
+var weekStart = isoDate(mondayOfWeek(requestedDate && !isNaN(requestedDate.getTime()) ? requestedDate : new Date()));
+var schedule = null;
+var departmentFilter = '';
+var visibleDays = 5;
+
+function mondayOfWeek(date) { var copy = new Date(date); var day = copy.getDay(); copy.setDate(copy.getDate() + (day === 0 ? -6 : 1 - day)); return copy; }
+function shiftWeek(offsetDays) { var date = new Date(weekStart + 'T12:00:00'); date.setDate(date.getDate() + offsetDays); weekStart = isoDate(date); load(); }
+function longDate(iso) { var d = new Date(iso + 'T12:00:00'); return d.getDate() + ' ' + MONTHS_FULL[d.getMonth()]; }
+
+async function load() {
+  try {
+    schedule = await API.getSchedule(weekStart);
+    render();
+  } catch (error) { showError(error); }
+}
+
+function render() {
+  var days = schedule.days.slice(0, visibleDays);
+  var first = new Date(days[0] + 'T12:00:00'), last = new Date(days[days.length - 1] + 'T12:00:00');
+  $('#range').textContent = (first.getMonth() === last.getMonth() ? first.getDate() : first.getDate() + ' ' + MONTHS_SHORT[first.getMonth()]) + '–' + last.getDate() + ' ' + MONTHS_FULL[last.getMonth()] + ' ' + last.getFullYear();
+  var proposal = schedule.proposal;
+  $('#proposal').classList.toggle('hidden', !proposal);
+  if (proposal) {
+    var names = [];
+    for (var n = 0; n < proposal.changes.length; n++) { if (names.indexOf(proposal.changes[n].who) < 0) { names.push(proposal.changes[n].who); } }
+    $('#proposal-title').textContent = 'AI подготовил изменения для ' + countText(names.length, 'сотрудника', 'сотрудников', 'сотрудников');
+    $('#proposal-text').textContent = names.join(', ') + ' · ' + countText(proposal.count, 'смена', 'смены', 'смен');
+  }
+  var todayIso = isoDate(new Date());
+  var people = [];
+  for (var p = 0; p < schedule.employees.length; p++) { if (!departmentFilter || schedule.employees[p].department === departmentFilter) { people.push(schedule.employees[p]); } }
+  var html = '<table class="sched"><thead><tr><th class="who" style="height:62px;padding-left:20px;text-transform:none;font-size:12px">Сотрудник</th>';
+  for (var d = 0; d < days.length; d++) {
+    var date = new Date(days[d] + 'T12:00:00');
+    html += '<th class="' + (days[d] === todayIso ? 'today' : '') + '">' + WEEKDAYS_SHORT[date.getDay()] + ', ' + date.getDate() + ' ' + MONTHS_SHORT[date.getMonth()] + '</th>';
+  }
+  html += '</tr></thead><tbody>';
+  for (var e = 0; e < people.length; e++) {
+    html += '<tr><td class="who"><b>' + esc(people[e].name) + '</b><small>' + esc(people[e].position) + '</small></td>';
+    for (var k = 0; k < days.length; k++) {
+      var shift = findShift(people[e].id, days[k]);
+      var cls = days[k] === todayIso ? 'today' : '';
+      if (shift) { html += '<td class="' + cls + '"><button class="shift ' + (shift.status === 'ai' ? 'ai' : '') + '" data-shift="' + shift.id + '">' + esc(shift.time) + '<small>' + (shift.status === 'ai' ? 'Предложение AI' : 'Подтверждено') + '</small></button></td>'; }
+      else { html += '<td class="' + cls + '"><button class="shift empty-cell" data-employee="' + people[e].id + '" data-date="' + days[k] + '" aria-label="Добавить смену">+</button></td>'; }
+    }
+    html += '</tr>';
+  }
+  if (people.length === 0) { html += '<tr><td colspan="' + (days.length + 1) + '"><div class="empty"><h3>Сотрудников не найдено</h3><p>Выберите другой отдел.</p></div></td></tr>'; }
+  $('#grid').innerHTML = html + '</tbody></table>';
+
+  $('#why').textContent = schedule.why ? schedule.why.text : 'Пояснение появится, когда AI подготовит предложение.';
+  var link = $('#why-link');
+  if (schedule.why && schedule.why.source) { link.textContent = 'Источник: ' + schedule.why.source + ' →'; link.href = schedule.why.href; link.classList.remove('hidden'); } else { link.classList.add('hidden'); }
+  var checks = '';
+  var list = schedule.checks || [];
+  for (var c = 0; c < list.length; c++) { checks += '<div style="color:var(--green);font-size:13px;display:flex;gap:10px;align-items:center">' + icon('check', 14) + esc(list[c]) + '</div>'; }
+  $('#checks').innerHTML = checks;
+}
+function findShift(employeeId, date) {
+  for (var i = 0; i < schedule.shifts.length; i++) { if (schedule.shifts[i].employeeId === employeeId && schedule.shifts[i].date === date) { return schedule.shifts[i]; } }
+  return null;
+}
+function findShiftById(id) { for (var i = 0; i < schedule.shifts.length; i++) { if (schedule.shifts[i].id === id) { return schedule.shifts[i]; } } return null; }
+
+/* Время смены: принимаем «14:00 — 22:00», «14:00-22:00», «14-22», приводим к «14:00–22:00» */
+function normalizeTime(text) {
+  var match = text.replace(/\s/g, '').match(/^(\d{1,2})(?::(\d{2}))?[-–—](\d{1,2})(?::(\d{2}))?$/);
+  if (!match) { return ''; }
+  var startH = parseInt(match[1], 10), endH = parseInt(match[3], 10), startM = parseInt(match[2] || '0', 10), endM = parseInt(match[4] || '0', 10);
+  if (startH > 23 || endH > 24 || startM > 59 || endM > 59) { return ''; }
+  return pad2(startH) + ':' + pad2(startM) + '–' + pad2(endH) + ':' + pad2(endM);
+}
+
+function openShiftModal(shift, presetEmployeeId, presetDate) {
+  var isEdit = !!shift;
+  var current = shift || { employeeId: presetEmployeeId || schedule.employees[0].id, date: presetDate || schedule.days[0], time: '14:00–22:00', note: '' };
+  var modal = openModal({
+    title: isEdit ? 'Редактировать смену' : 'Добавить смену',
+    html: '<div class="field"><label>Сотрудник *</label><select class="select" id="s-employee">' + optionsHtml(schedule.employees, current.employeeId, 'id', 'name') + '</select></div>' +
+      '<div class="row"><div class="field"><label>Дата *</label><input class="input" type="date" id="s-date" value="' + current.date + '"></div>' +
+      '<div class="field" id="s-time-field"><label>Время *</label><input class="input" id="s-time" value="' + esc(current.time.replace('–', ' — ')) + '" placeholder="14:00 — 22:00"><span class="field-error">Укажите время, например 14:00 — 22:00</span></div></div>' +
+      '<div class="field"><label>Примечание</label><input class="input" id="s-note" value="' + esc(current.note || '') + '" placeholder="Например: усиление вечерней смены"></div>' +
+      '<div class="modal-foot">' + (isEdit ? '<button class="btn" id="s-delete" style="margin-right:auto;color:var(--red)">Удалить</button>' : '') + '<button class="btn" data-close>Отмена</button><button class="btn primary" id="s-save">Сохранить смену</button></div>'
+  });
+  watchFieldErrors(modal.root);
+  $('#s-save', modal.root).addEventListener('click', async function (event) {
+    var button = event.currentTarget;
+    var time = normalizeTime($('#s-time', modal.root).value);
+    if (!time) { setFieldError($('#s-time-field', modal.root), 'Укажите время, например 14:00 — 22:00'); return; }
+    if (!$('#s-date', modal.root).value) { toast('Укажите дату', 'error'); return; }
+    var payload = { employeeId: $('#s-employee', modal.root).value, date: $('#s-date', modal.root).value, time: time, note: $('#s-note', modal.root).value.trim() };
+    setBusy(button, true, 'Сохраняем…');
+    try {
+      if (isEdit) { await API.updateShift(shift.id, payload); } else { await API.addShift(payload); }
+      modal.close(); toast('Смена сохранена');
+      weekStart = isoDate(mondayOfWeek(new Date(payload.date + 'T12:00:00')));
+      load();
+    } catch (error) { setBusy(button, false); showError(error); }
+  });
+  if (isEdit) {
+    $('#s-delete', modal.root).addEventListener('click', async function () {
+      try { await API.deleteShift(shift.id); modal.close(); toast('Смена удалена'); load(); } catch (error) { showError(error); }
+    });
+  }
+}
+
+function openPublishModal() {
+  var changes = schedule.proposal.changes;
+  var names = [];
+  var rows = '';
+  for (var i = 0; i < changes.length; i++) {
+    if (names.indexOf(changes[i].who) < 0) { names.push(changes[i].who); }
+    rows += '<div>' + longDate(changes[i].date) + ' · ' + esc(changes[i].who) + '</div><div style="margin:2px 0 6px">' + esc(changes[i].was || '—') + ' &nbsp;→&nbsp; ' + esc(changes[i].now) + '</div>';
+  }
+  var modal = openModal({
+    title: 'Опубликовать новый график?', narrow: true,
+    html: '<p class="muted" style="font-size:12px;line-height:1.4">Изменятся ' + countText(changes.length, 'смена', 'смены', 'смен') + ' для ' + countText(names.length, 'сотрудника', 'сотрудников', 'сотрудников') + '.<br>' + esc(names.join(', ')) + ' получат уведомление об изменениях.</p>' +
+      '<div class="changes">' + rows + '</div><p class="hint">Публикация и уведомления — только после подтверждения.</p>' +
+      '<div class="modal-foot" style="border:0;margin:0;padding:0"><button class="btn" data-close>Отмена</button><button class="btn primary" id="publish">Опубликовать</button></div>'
+  });
+  $('#publish', modal.root).addEventListener('click', async function (event) {
+    var button = event.currentTarget;
+    setBusy(button, true, 'Публикуем…');
+    try { await API.publishSchedule(weekStart); modal.close(); toast('График опубликован, сотрудники уведомлены'); load(); }
+    catch (error) { setBusy(button, false); showError(error); }
+  });
+}
+
+document.addEventListener('DOMContentLoaded', async function () {
+  try { var departments = await API.getDepartments(); $('#department').innerHTML = '<option value="">Все отделы</option>' + optionsHtml(departments, ''); } catch (error) { showError(error); }
+  load();
+  $('#prev').addEventListener('click', function () { shiftWeek(-7); });
+  $('#next').addEventListener('click', function () { shiftWeek(7); });
+  $('#today').addEventListener('click', function () { weekStart = isoDate(mondayOfWeek(new Date())); load(); });
+  $('#department').addEventListener('change', function (event) { departmentFilter = event.target.value; render(); });
+  $('#view').addEventListener('change', function (event) { visibleDays = parseInt(event.target.value, 10); render(); });
+  $('#add-shift').addEventListener('click', function () { if (schedule) { openShiftModal(null); } });
+  $('#grid').addEventListener('click', function (event) {
+    var cell = event.target.closest('button.shift');
+    if (!cell) { return; }
+    if (cell.dataset.shift) { openShiftModal(findShiftById(cell.dataset.shift)); } else { openShiftModal(null, cell.dataset.employee, cell.dataset.date); }
+  });
+  $('#generate').addEventListener('click', async function (event) {
+    var button = event.currentTarget;
+    setBusy(button, true, 'AI составляет…');
+    try { var result = await API.generateSchedule(weekStart); toast(result.proposal ? 'AI подготовил предложение по графику' : 'Изменений не требуется'); await load(); } catch (error) { showError(error); }
+    setBusy(button, false);
+  });
+  $('#approve').addEventListener('click', openPublishModal);
+  $('#reject').addEventListener('click', async function () {
+    try { await API.rejectProposal(weekStart); toast('Предложение отклонено', 'info'); load(); } catch (error) { showError(error); }
+  });
+});
+
+</script>
+</body>
+</html>

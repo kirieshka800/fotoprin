@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Саммари встречи · Фотопринт AI</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap&subset=cyrillic" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body data-nav="meetings" data-title="Саммари встречи">
+<div class="app">
+<aside class="sidebar" id="sidebar"></aside>
+<div>
+<header class="topbar" id="topbar"></header>
+<main class="page">
+
+<div class="page-head">
+  <div><div class="eyebrow"><a href="meetings.html" style="display:flex;gap:8px;align-items:center"><svg class="i" viewBox="0 0 24 24" style="width:13px;height:13px"><path d="M19 12H5M11 6l-6 6 6 6"/></svg> Все встречи</a></div>
+    <h1 id="title" style="font-size:30px">&nbsp;</h1><p class="page-sub" id="meta" style="font-size:13px">&nbsp;</p></div>
+  <div class="head-actions" id="head-actions"><button class="btn" id="export">Экспорт</button><button class="btn primary" id="share">Поделиться</button></div>
+</div>
+<div id="state-box" class="card status-card hidden"></div>
+<div id="content" class="hidden">
+  <div class="chips" style="margin:-8px 0 20px;gap:14px"><span class="badge green sm" style="height:26px;font-size:11px">✓ &nbsp;Саммари готово</span><span class="hint" style="font-size:11px">Создано AI &nbsp;·&nbsp; проверьте важные детали</span></div>
+  <div class="grid-main">
+    <div class="stack">
+      <section class="card player" style="padding:20px 24px">
+        <button class="play" id="play" aria-label="Воспроизвести"><svg class="i" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></button>
+        <div style="min-width:120px"><b style="font-size:13px;font-weight:600;display:block">Запись встречи</b><small class="hint" id="time" style="font-size:11px">00:00 / 00:00</small></div>
+        <div class="wave" id="wave" role="slider" aria-label="Перемотка"></div>
+        <button class="chip" id="speed" aria-label="Скорость">1×</button>
+        <audio id="audio" preload="none"></audio>
+      </section>
+      <section class="card" style="padding:0 24px 24px">
+        <div class="tabs" role="tablist" id="tabs"><button class="tab active" data-tab="summary">Саммари</button><button class="tab" data-tab="transcript">Расшифровка</button><button class="tab" data-tab="people" id="people-tab">Участники</button></div>
+        <div id="tab-summary"></div><div id="tab-transcript" class="hidden"></div><div id="tab-people" class="hidden"></div>
+      </section>
+    </div>
+    <div class="stack">
+      <section class="card">
+        <h2 style="font-size:19px">Из разговора — в дело</h2><p class="sub" id="tasks-note" style="color:var(--green);font-size:11px"></p>
+        <div id="tasks" style="margin-top:14px"></div>
+        <div style="margin-top:18px;display:flex;gap:10px;align-items:center" id="tasks-more"></div>
+      </section>
+      <section class="card">
+        <div class="card-head" style="margin-bottom:16px"><h2 style="font-size:19px">Спросить о встрече</h2><span class="badge purple sm">AI</span></div>
+        <div id="ask-log" style="display:flex;flex-direction:column;gap:14px"></div>
+        <div class="ask-box" style="margin-top:18px;padding:10px 10px 10px 14px;min-height:62px"><input id="ask-input" placeholder="Задайте уточняющий вопрос…" aria-label="Вопрос ассистенту"><button class="send" id="ask-send" disabled aria-label="Отправить"><svg class="i" viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></svg></button></div>
+      </section>
+    </div>
+  </div>
+</div>
+
+</main>
+</div>
+</div>
+<script src="config.js"></script>
+<script src="mock-data.js"></script>
+<script src="api.js"></script>
+<script src="ui.js"></script>
+<script>
+
+var meeting = null;
+var employees = [];
+var simulatedSeconds = 0;
+var simulatedTimer = null;
+var playing = false;
+var SPEEDS = [1, 1.25, 1.5, 2];
+var speedIndex = 0;
+
+function clockText(totalSeconds) { return pad2(Math.floor(totalSeconds / 60)) + ':' + pad2(Math.floor(totalSeconds % 60)); }
+
+async function loadMeeting() {
+  var id = getParam('id');
+  if (!id) { window.location.href = 'meetings.html'; return; }
+  try {
+    var results = await Promise.all([API.getMeeting(id), API.getEmployees()]);
+    for (var q = 0; q < results[1].length; q++) { results[1][q].id = String(results[1][q].id); }
+    results[0].participantIds = (results[0].participantIds || []).map(String);
+    meeting = results[0]; employees = results[1];
+    document.title = meeting.title + ' · Фотопринт AI';
+    $('#title').textContent = meeting.title;
+    $('#meta').textContent = metaLine();
+    if (meeting.status === 'error') { showFailed(meeting.errorMessage); return; }
+    if (meeting.status !== 'ready') { showProcessing(); return; }
+    showReady();
+  } catch (error) {
+    $('#title').textContent = 'Встреча не найдена';
+    $('#head-actions').classList.add('hidden');
+    showError(error);
+  }
+}
+function metaLine() {
+  var date = new Date(meeting.date);
+  var end = new Date(date.getTime() + (meeting.durationMin || 0) * 60000);
+  var text = date.getDate() + ' ' + MONTHS_FULL[date.getMonth()] + ' ' + date.getFullYear() + '  ·  ' + timeText(date);
+  if (meeting.durationMin) { text += '–' + timeText(end); }
+  return text + '  ·  ' + countText(meeting.participantIds.length, 'участник', 'участника', 'участников');
+}
+function showProcessing() {
+  $('#head-actions').classList.add('hidden');
+  var box = $('#state-box');
+  box.classList.remove('hidden');
+  box.innerHTML = processingHtml(meeting.progress || 5);
+  watchMeeting(meeting.id, function (progress) { box.innerHTML = processingHtml(progress); }, function () { window.location.reload(); }, function () { API.getMeeting(meeting.id).then(function (fresh) { showFailed(fresh.errorMessage); }).catch(function () { showFailed(''); }); });
+}
+function showFailed(message) {
+  $('#head-actions').classList.add('hidden');
+  var box = $('#state-box');
+  box.classList.remove('hidden');
+  box.innerHTML = errorHtml(message || 'Не удалось обработать запись.', 'Не получилось собрать саммари', meeting.audioUrl);
+  bindError(box);
+}
+function bindError(box) {
+  var retry = $('#retry-upload', box), other = $('#pick-other', box);
+  if (retry) { retry.addEventListener('click', function () { window.location.href = 'new-meeting.html'; }); }
+  if (other) { other.addEventListener('click', function () { window.location.href = 'new-meeting.html'; }); }
+}
+
+function showReady() {
+  $('#content').classList.remove('hidden');
+  $('#people-tab').textContent = 'Участники · ' + meeting.participantIds.length;
+  renderSummary(); renderTranscript(); renderPeople(); buildWave(); loadTasks();
+  var total = meeting.audioDuration || (meeting.durationMin || 0) * 60;
+  $('#time').textContent = '00:00 / ' + clockText(total);
+  if (meeting.audioUrl) { $('#audio').src = meeting.audioUrl; }
+}
+
+function renderSummary() {
+  var summary = meeting.summary || { highlight: '', topics: [], decisions: [], source: '' };
+  var html = '<div class="highlight"><small>Главное за 30 секунд</small><p>' + esc(summary.highlight) + '</p></div>';
+  if (summary.topics.length) {
+    html += '<h2 style="font-size:19px;margin-bottom:6px">Что обсудили</h2>';
+    for (var i = 0; i < summary.topics.length; i++) {
+      var topic = summary.topics[i];
+      html += '<div class="topic"><div><b>' + esc(topic.title) + '</b><small>' + esc(topic.text) + '</small></div>' + (topic.time ? '<button class="time" data-seek="' + esc(topic.time) + '">' + esc(topic.time) + '</button>' : '') + '</div>';
+    }
+  }
+  if (summary.decisions.length) {
+    html += '<div class="divider" style="margin:26px 0"></div><h2 style="font-size:19px;margin-bottom:14px">Принятые решения</h2>';
+    for (var j = 0; j < summary.decisions.length; j++) { html += '<div class="check" style="margin-bottom:14px;gap:10px;font-size:12px"><span style="color:var(--green)">' + icon('check', 14) + '</span>' + esc(summary.decisions[j]) + '</div>'; }
+  }
+  if (summary.source) { html += '<p class="hint" style="margin-top:24px">Источник: ' + esc(summary.source) + ' Фрагменты доступны по таймкодам.</p>'; }
+  $('#tab-summary').innerHTML = html;
+  var seekers = $all('[data-seek]', $('#tab-summary'));
+  for (var k = 0; k < seekers.length; k++) { seekers[k].addEventListener('click', function (event) { seekToText(event.currentTarget.dataset.seek); }); }
+}
+function renderTranscript() {
+  var rows = meeting.transcript || [];
+  if (rows.length === 0) { $('#tab-transcript').innerHTML = '<div class="empty"><h3>Расшифровки пока нет</h3><p>Она появится, когда запись будет обработана.</p></div>'; return; }
+  var html = '<div style="padding-top:8px">';
+  for (var i = 0; i < rows.length; i++) {
+    html += '<div class="topic"><div><b>' + esc(rows[i].speaker) + '</b><small>' + esc(rows[i].text) + '</small></div><button class="time" data-seek="' + esc(rows[i].time) + '">' + esc(rows[i].time) + '</button></div>';
+  }
+  $('#tab-transcript').innerHTML = html + '</div>';
+  var seekers = $all('[data-seek]', $('#tab-transcript'));
+  for (var k = 0; k < seekers.length; k++) { seekers[k].addEventListener('click', function (event) { seekToText(event.currentTarget.dataset.seek); }); }
+}
+function renderPeople() {
+  var html = '<div style="padding-top:12px">';
+  for (var i = 0; i < meeting.participantIds.length; i++) {
+    for (var j = 0; j < employees.length; j++) {
+      if (employees[j].id === meeting.participantIds[i]) { html += '<div class="team-row"><div>' + esc(employees[j].name) + '</div><span>' + esc(employees[j].position) + '</span></div>'; break; }
+    }
+  }
+  if (meeting.participantIds.length === 0) { html += '<p class="muted" style="padding:20px 0;font-size:12px">Участники не указаны.</p>'; }
+  $('#tab-people').innerHTML = html + '</div>';
+}
+
+async function loadTasks() {
+  try {
+    var data;
+    if (meeting.tasks) {
+      data = { total: meeting.tasks.length, items: [] };
+      for (var t = 0; t < meeting.tasks.length && t < 3; t++) {
+        data.items.push({ id: meeting.tasks[t].id, title: meeting.tasks[t].title, assigneeName: meeting.tasks[t].assignee, dueText: meeting.tasks[t].dueText, status: meeting.tasks[t].status === 'completed' ? 'done' : 'in_progress', fromServer: true });
+      }
+    } else {
+      data = await API.getTasks({ meetingId: meeting.id, status: 'all', pageSize: 3 });
+    }
+    $('#tasks-note').textContent = data.total ? countText(data.total, 'задача создана', 'задачи созданы', 'задач создано') + ' и назначены' : '';
+    if (data.total === 0) { $('#tasks').innerHTML = '<p class="muted" style="font-size:12px">По этой встрече задач пока нет.</p>'; $('#tasks-more').innerHTML = ''; return; }
+    var html = '';
+    for (var i = 0; i < data.items.length; i++) {
+      var task = data.items[i];
+      html += '<div class="task-mini"><label class="check" style="align-items:flex-start"><input type="checkbox" data-task="' + task.id + '"' + (task.status === 'done' ? ' checked' : '') + (task.fromServer ? ' disabled' : '') + '><span><b style="font-size:12px;font-weight:500;display:block">' + esc(task.title) + '</b><small class="hint">' + esc(task.assigneeName) + ' &nbsp;·&nbsp; ' + esc(task.dueText !== undefined ? task.dueText : formatDay(task.due)) + '</small></span></label></div>';
+    }
+    $('#tasks').innerHTML = html;
+    var rest = data.total - data.items.length;
+    $('#tasks-more').innerHTML = (rest > 0 ? '<span class="link" style="cursor:default">Ещё ' + countText(rest, 'задача', 'задачи', 'задач') + '</span><span class="hint">·</span>' : '') + '<a class="link" href="tasks.html?meetingId=' + meeting.id + '">Открыть все ' + icon('right') + '</a>';
+    var boxes = $all('[data-task]', $('#tasks'));
+    for (var b = 0; b < boxes.length; b++) {
+      boxes[b].addEventListener('change', async function (event) {
+        try { await API.updateTask(event.target.dataset.task, { status: event.target.checked ? 'done' : 'in_progress' }); toast(event.target.checked ? 'Задача завершена' : 'Задача снова в работе'); }
+        catch (error) { event.target.checked = !event.target.checked; showError(error); }
+      });
+    }
+  } catch (error) { showError(error); }
+}
+
+/* ---------- плеер ---------- */
+function buildWave() {
+  var html = '';
+  var seed = 7;
+  for (var i = 0; i < 70; i++) { seed = (seed * 9301 + 49297) % 233280; html += '<i style="height:' + (20 + Math.round(seed / 233280 * 80)) + '%"></i>'; }
+  $('#wave').innerHTML = html;
+}
+function totalSeconds() { return meeting.audioDuration || (meeting.durationMin || 1) * 60; }
+function currentSeconds() { return meeting.audioUrl ? $('#audio').currentTime : simulatedSeconds; }
+function paintPlayer() {
+  var current = currentSeconds();
+  var bars = $all('#wave i');
+  var doneCount = Math.round(bars.length * current / totalSeconds());
+  for (var i = 0; i < bars.length; i++) { bars[i].classList.toggle('done', i < doneCount); }
+  $('#time').textContent = clockText(current) + ' / ' + clockText(totalSeconds());
+}
+function setPlaying(value) {
+  playing = value;
+  $('#play').innerHTML = value ? '<svg class="i" viewBox="0 0 24 24" style="stroke-width:3;fill:none"><path d="M8 5v14M16 5v14"/></svg>' : '<svg class="i" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>';
+  if (meeting.audioUrl) { if (value) { $('#audio').play(); } else { $('#audio').pause(); } }
+  clearInterval(simulatedTimer);
+  if (value && !meeting.audioUrl) { /* пока нет файла записи — имитация хода воспроизведения */
+    simulatedTimer = setInterval(function () { simulatedSeconds += SPEEDS[speedIndex]; if (simulatedSeconds >= totalSeconds()) { simulatedSeconds = 0; setPlaying(false); } paintPlayer(); }, 1000);
+  }
+}
+function seekTo(seconds) {
+  if (meeting.audioUrl) { $('#audio').currentTime = seconds; } else { simulatedSeconds = seconds; }
+  paintPlayer();
+}
+function seekToText(text) { var parts = text.split(':'); seekTo(parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10)); if (!playing) { setPlaying(true); } }
+
+document.addEventListener('DOMContentLoaded', function () {
+  loadMeeting();
+  $('#play').addEventListener('click', function () { setPlaying(!playing); });
+  $('#audio').addEventListener('timeupdate', paintPlayer);
+  $('#speed').addEventListener('click', function (event) {
+    speedIndex = (speedIndex + 1) % SPEEDS.length;
+    event.currentTarget.textContent = String(SPEEDS[speedIndex]).replace('.', ',') + '×';
+    $('#audio').playbackRate = SPEEDS[speedIndex];
+  });
+  $('#wave').addEventListener('click', function (event) {
+    var rect = event.currentTarget.getBoundingClientRect();
+    seekTo(totalSeconds() * (event.clientX - rect.left) / rect.width);
+  });
+  var tabs = $all('#tabs .tab');
+  for (var i = 0; i < tabs.length; i++) {
+    tabs[i].addEventListener('click', function (event) {
+      var name = event.currentTarget.dataset.tab;
+      for (var j = 0; j < tabs.length; j++) { tabs[j].classList.toggle('active', tabs[j].dataset.tab === name); $('#tab-' + tabs[j].dataset.tab).classList.toggle('hidden', tabs[j].dataset.tab !== name); }
+    });
+  }
+  $('#export').addEventListener('click', function (event) {
+    attachMenu(event.currentTarget, [{ value: 'pdf', label: 'PDF' }, { value: 'docx', label: 'Word (DOCX)' }, { value: 'txt', label: 'Текст (TXT)' }], async function (format) {
+      try {
+        var result = await API.exportMeeting(meeting.id, format);
+        if (result.url) { window.location.href = result.url; } else { downloadText(result.fileName, result.content); }
+        toast('Экспорт готов');
+      } catch (error) { showError(error); }
+    });
+  });
+  $('#share').addEventListener('click', function () {
+    var link = window.location.origin + window.location.pathname + '?id=' + meeting.id;
+    var modal = openModal({ title: 'Поделиться саммари', narrow: true,
+      html: '<p class="muted" style="font-size:12px">Ссылка откроется у участников рабочего пространства.</p><div class="field"><label>Ссылка</label><input class="input" readonly value="' + esc(link) + '"></div>' +
+        '<div class="modal-foot"><button class="btn secondary" data-close>Закрыть</button><button class="btn primary" id="copy">Скопировать ссылку</button></div>' });
+    $('#copy', modal.root).addEventListener('click', async function () {
+      try { await navigator.clipboard.writeText(link); toast('Ссылка скопирована'); modal.close(); }
+      catch (error) { $('input', modal.root).select(); toast('Скопируйте ссылку вручную: Ctrl+C', 'info'); }
+    });
+  });
+  var input = $('#ask-input'), send = $('#ask-send');
+  input.addEventListener('input', function () { send.disabled = input.value.trim() === ''; });
+  async function ask() {
+    var question = input.value.trim();
+    if (!question) { return; }
+    var log = $('#ask-log');
+    log.insertAdjacentHTML('beforeend', '<div class="bubble">' + esc(question) + '</div>');
+    input.value = ''; send.disabled = true;
+    try {
+      var answer = await API.askAboutMeeting(meeting.id, question);
+      log.insertAdjacentHTML('beforeend', '<div style="font-size:12px;line-height:1.35">' + esc(answer.answer) + '</div>' + (answer.source ? '<span class="badge sm" style="align-self:flex-start;background:var(--chip)">На основе записи · ' + esc(answer.source) + '</span>' : ''));
+    } catch (error) { showError(error); }
+  }
+  send.addEventListener('click', ask);
+  input.addEventListener('keydown', function (event) { if (event.key === 'Enter') { ask(); } });
+});
+
+</script>
+</body>
+</html>

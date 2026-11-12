@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Задачи · Фотопринт AI</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap&subset=cyrillic" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body data-nav="tasks" data-title="Задачи">
+<div class="app">
+<aside class="sidebar" id="sidebar"></aside>
+<div>
+<header class="topbar" id="topbar"></header>
+<main class="page">
+
+<div class="page-head">
+  <div><div class="eyebrow">Команда в одном ритме</div><h1>Задачи и график</h1><p class="page-sub">Договорённости не теряются. У каждого — понятный следующий шаг.</p></div>
+  <div class="head-actions"><button class="btn primary" id="new-task">+ Новая задача</button></div>
+</div>
+<div class="row" style="align-items:center;margin-bottom:24px;flex-wrap:wrap">
+  <div class="chips" id="status-chips" style="gap:18px"><button class="chip active" data-status="active">В работе</button><button class="chip" data-status="all">Все задачи</button><button class="chip" data-status="done">Завершены</button></div>
+  <span class="badge purple hidden" id="meeting-filter" style="margin-left:12px"></span>
+  <select class="select white" id="assignee" style="width:172px;flex:none;margin-left:auto" aria-label="Сотрудник"></select>
+  <select class="select white" id="sort" style="width:160px;flex:none" aria-label="Сортировка"><option value="due">По сроку ↓</option><option value="title">По названию</option><option value="status">По статусу</option></select>
+</div>
+<section class="card table-wrap" style="padding:0 20px 18px">
+  <div id="table-box"></div>
+  <div class="pager"><span id="shown"></span><nav id="pages" aria-label="Страницы"></nav></div>
+</section>
+<div class="grid-main" style="margin-top:24px;grid-template-columns:minmax(0,1fr) 348px">
+  <section class="card scroll-x"><div class="card-head"><h2>График работы</h2><span class="muted" style="font-size:11px" id="week-label"></span></div>
+    <div class="banner hidden" id="proposal" style="padding:14px 16px;margin-bottom:12px"><span style="font-size:12px;color:var(--accent-dark)" id="proposal-text"></span></div>
+    <div id="mini-schedule"></div>
+    <div class="divider"></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:16px"><span class="hint" id="publish-state"></span><a class="btn primary lg" href="schedule.html" style="font-size:12px">Утвердить график</a></div>
+  </section>
+  <section class="card"><div class="card-head"><h2>Напоминания</h2><span class="badge green sm">Авто</span></div><div id="reminders"></div><div class="divider"></div><a class="link" href="settings.html#notifications">Настроить уведомления <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a></section>
+</div>
+
+</main>
+</div>
+</div>
+<script src="config.js"></script>
+<script src="mock-data.js"></script>
+<script src="api.js"></script>
+<script src="ui.js"></script>
+<script>
+
+var PAGE_SIZE = 5;
+var state = { status: 'active', assigneeId: '', sort: 'due', page: 1, meetingId: getParam('meetingId') || '' };
+var employees = [];
+
+async function loadTasks() {
+  try {
+    var data = await API.getTasks({ status: state.status, assigneeId: state.assigneeId, sort: state.sort, page: state.page, pageSize: PAGE_SIZE, meetingId: state.meetingId });
+    var chips = $all('#status-chips .chip');
+    chips[0].textContent = 'В работе · ' + data.counts.active;
+    chips[1].textContent = 'Все задачи · ' + data.counts.all;
+    chips[2].textContent = 'Завершены · ' + data.counts.done;
+    renderTable(data.items);
+    $('#shown').textContent = data.total === 0 ? '' : 'Показано ' + data.items.length + ' из ' + data.total + ' ' + plural(data.total, 'задачи', 'задач', 'задач');
+    renderPager(data.total);
+  } catch (error) { showError(error); }
+}
+
+function renderTable(items) {
+  if (items.length === 0) {
+    $('#table-box').innerHTML = '<div class="empty"><h3>Задач не найдено</h3><p>Измените фильтры или создайте новую задачу.</p><button class="btn primary lg" id="empty-new">+ Новая задача</button></div>';
+    $('#empty-new').addEventListener('click', openNewTask);
+    return;
+  }
+  var html = '<table class="table"><thead><tr><th>Задача</th><th>Ответственный</th><th>Срок</th><th>Статус</th><th>Источник</th></tr></thead><tbody>';
+  for (var i = 0; i < items.length; i++) {
+    var task = items[i];
+    var soon = isDueSoon(task.due) && task.status !== 'done';
+    html += '<tr data-id="' + task.id + '"><td><div style="display:flex;align-items:center;gap:14px"><label class="check"><input type="checkbox" data-done="' + task.id + '"' + (task.status === 'done' ? ' checked' : '') + ' aria-label="Выполнено"></label><span class="t-title">' + esc(task.title) + '</span></div></td>' +
+      '<td>' + esc(task.assigneeName) + '</td><td class="' + (soon ? 'due-hot' : '') + '">' + esc(formatDateTime(task.due)) + '</td><td>' + statusBadge(task.status) + '</td><td>' + esc(task.source) + '</td></tr>';
+  }
+  $('#table-box').innerHTML = html + '</tbody></table>';
+}
+
+function renderPager(total) {
+  var pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  var html = '';
+  if (pages > 1) {
+    for (var p = 1; p <= pages; p++) { html += '<button data-page="' + p + '" class="' + (p === state.page ? 'active' : '') + '">' + p + '</button>'; }
+    if (state.page < pages) { html += '<button data-page="' + (state.page + 1) + '" aria-label="Дальше">' + icon('right', 13) + '</button>'; }
+  }
+  $('#pages').innerHTML = html;
+}
+
+function openNewTask() { openTaskModal(employees, null, function () { state.page = 1; loadTasks(); loadSideBadge(); }); }
+function loadSideBadge() { fillShellData(); }
+
+async function loadMiniSchedule() {
+  try {
+    var monday = isoDate(mondayOfWeek(new Date()));
+    var data = await API.getSchedule(monday);
+    var days = data.days.slice(0, 5);
+    var todayIso = isoDate(new Date());
+    $('#week-label').textContent = rangeLabel(days[0], days[4]);
+    if (data.proposal) { $('#proposal').classList.remove('hidden'); $('#proposal-text').textContent = data.proposal.text; } else { $('#proposal').classList.add('hidden'); }
+    $('#publish-state').textContent = data.proposal ? 'Не опубликован · ' + countText(data.proposal.count, 'изменение ждёт', 'изменения ждут', 'изменений ждут') + ' решения' : (data.published ? 'График опубликован' : 'Изменений нет');
+    var html = '<table class="sched"><thead><tr><th class="who" style="padding-left:0">Сотрудник</th>';
+    for (var d = 0; d < days.length; d++) { var date = new Date(days[d] + 'T12:00:00'); html += '<th class="' + (days[d] === todayIso ? 'today' : '') + '">' + WEEKDAYS_SHORT[date.getDay()] + ', ' + date.getDate() + '</th>'; }
+    html += '</tr></thead><tbody>';
+    var people = [];
+    for (var q = 0; q < data.employees.length && people.length < 3; q++) { if (data.employees[q].role !== 'Руководитель') { people.push(data.employees[q]); } }
+    for (var e = 0; e < people.length; e++) {
+      html += '<tr><td class="who" style="padding-left:0"><b>' + esc(people[e].name) + '</b></td>';
+      for (var k = 0; k < days.length; k++) {
+        var shift = null;
+        for (var s = 0; s < data.shifts.length; s++) { if (data.shifts[s].employeeId === people[e].id && data.shifts[s].date === days[k]) { shift = data.shifts[s]; } }
+        html += '<td class="' + (days[k] === todayIso ? 'today' : '') + '">' + (shift ? '<span class="shift ' + (shift.status === 'ai' ? 'ai' : '') + '" style="height:32px;font-size:11px">' + shortTime(shift.time) + '</span>' : '') + '</td>';
+      }
+      html += '</tr>';
+    }
+    $('#mini-schedule').innerHTML = html + '</tbody></table>';
+  } catch (error) { showError(error); }
+}
+
+async function loadReminders() {
+  try {
+    var list = await API.getReminders();
+    if (list.length === 0) { $('#reminders').innerHTML = '<p class="muted" style="font-size:12px">Напоминаний пока нет.</p>'; return; }
+    var html = '';
+    for (var i = 0; i < list.length; i++) {
+      html += '<div class="item" style="gap:20px"><span class="hint" style="width:40px;font-size:11px;padding-top:3px">' + esc(list[i].time) + '</span><div><b style="font-size:13px">' + esc(list[i].title) + '</b><small>' + esc(list[i].meta) + '</small><small style="color:' + (list[i].tone === 'green' ? 'var(--green)' : list[i].tone === 'orange' ? 'var(--orange)' : 'var(--accent)') + '">' + esc(list[i].state) + '</small></div></div>';
+    }
+    $('#reminders').innerHTML = html;
+  } catch (error) { showError(error); }
+}
+
+document.addEventListener('DOMContentLoaded', async function () {
+  try {
+    employees = await API.getEmployees();
+    $('#assignee').innerHTML = '<option value="">Все сотрудники</option>' + optionsHtml(employees, '', 'id', 'name');
+  } catch (error) { showError(error); }
+  if (state.meetingId) {
+    try { var meeting = await API.getMeeting(state.meetingId); state.status = 'all'; $('#meeting-filter').textContent = 'Встреча: ' + meeting.title + ' ✕'; $('#meeting-filter').classList.remove('hidden'); $all('#status-chips .chip')[0].classList.remove('active'); $all('#status-chips .chip')[1].classList.add('active'); } catch (e) { state.meetingId = ''; }
+  }
+  loadTasks(); loadMiniSchedule(); loadReminders();
+  $('#new-task').addEventListener('click', openNewTask);
+  $('#meeting-filter').addEventListener('click', function () { state.meetingId = ''; $('#meeting-filter').classList.add('hidden'); history.replaceState(null, '', 'tasks.html'); loadTasks(); });
+  var chips = $all('#status-chips .chip');
+  for (var i = 0; i < chips.length; i++) {
+    chips[i].addEventListener('click', function (event) {
+      state.status = event.currentTarget.dataset.status; state.page = 1;
+      for (var j = 0; j < chips.length; j++) { chips[j].classList.toggle('active', chips[j] === event.currentTarget); }
+      loadTasks();
+    });
+  }
+  $('#assignee').addEventListener('change', function (event) { state.assigneeId = event.target.value; state.page = 1; loadTasks(); });
+  $('#sort').addEventListener('change', function (event) { state.sort = event.target.value; state.page = 1; loadTasks(); });
+  $('#pages').addEventListener('click', function (event) { var button = event.target.closest('button'); if (button) { state.page = parseInt(button.dataset.page, 10); loadTasks(); } });
+  $('#table-box').addEventListener('click', async function (event) {
+    var box = event.target.closest('[data-done]');
+    if (box) {
+      event.stopPropagation();
+      try { await API.updateTask(box.dataset.done, { status: box.checked ? 'done' : 'in_progress' }); toast(box.checked ? 'Задача завершена' : 'Задача снова в работе'); loadTasks(); loadSideBadge(); }
+      catch (error) { box.checked = !box.checked; showError(error); }
+      return;
+    }
+    if (event.target.closest('label')) { return; }
+    var row = event.target.closest('tr[data-id]');
+    if (row) { window.location.href = 'task.html?id=' + row.dataset.id; }
+  });
+});
+
+function mondayOfWeek(date) { var copy = new Date(date); var day = copy.getDay(); copy.setDate(copy.getDate() + (day === 0 ? -6 : 1 - day)); return copy; }
+function shortTime(range) { return range.replace(/:00/g, '').replace('–', '–'); }
+function rangeLabel(fromIso, toIso) {
+  var from = new Date(fromIso + 'T12:00:00'), to = new Date(toIso + 'T12:00:00');
+  if (from.getMonth() === to.getMonth()) { return from.getDate() + '–' + to.getDate() + ' ' + MONTHS_FULL[to.getMonth()]; }
+  return from.getDate() + ' ' + MONTHS_FULL[from.getMonth()] + ' – ' + to.getDate() + ' ' + MONTHS_FULL[to.getMonth()];
+}
+
+</script>
+</body>
+</html>

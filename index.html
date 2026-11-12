@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Фотопринт AI — Прототип</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen font-sans">
+<div class="max-w-4xl mx-auto p-6">
+    <header class="bg-white shadow rounded-2xl p-6 mb-6 flex justify-between items-center">
+        <div>
+            <h1 class="text-2xl font-bold text-gray-800">Фотопринт AI <span class="text-xs bg-indigo-100 text-indigo-700 px-2 py-1 rounded-full">Prototype</span></h1>
+            <p class="text-sm text-gray-500">Система подготовки встреч и управления знаниями на Axum и Ollama</p>
+        </div>
+        <div id="status" class="text-sm px-3 py-1 rounded-full bg-yellow-100 text-yellow-800">Проверка связи...</div>
+    </header>
+
+    <!-- Выбор роли для проверки прав (AI-02) -->
+    <div class="bg-white shadow rounded-2xl p-4 mb-6 flex items-center justify-between">
+        <label for="userRole" class="text-sm font-medium text-gray-700">Роль текущего пользователя:</label>
+        <select id="userRole" class="border rounded-xl p-2 text-sm bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+            <option value="admin">admin (Администратор)</option>
+            <option value="manager" selected>manager (Руководитель)</option>
+            <option value="printer">printer (Печатник)</option>
+        </select>
+    </div>
+
+    <!-- Блок работы с базами знаний и документами (AI-01, AI-02) -->
+    <div class="bg-white shadow rounded-2xl p-6 mb-6">
+        <h2 class="text-lg font-semibold text-gray-700 mb-3">Справка по документам и регламентам (AI-01, AI-02)</h2>
+        <div class="flex gap-4 mb-3">
+            <input type="text" id="kbQuery" class="flex-1 border rounded-xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Например: Когда утвердили регламент отпусков?">
+            <button onclick="askKnowledgeBase()" class="bg-indigo-600 text-white px-6 py-2.5 rounded-xl font-medium hover:bg-indigo-700 transition">Спросить ИИ</button>
+        </div>
+        <div id="kbOutput" class="bg-gray-50 border rounded-xl p-4 text-sm text-gray-700 font-mono">Здесь появится ответ с указанием источников и дат...</div>
+    </div>
+
+    <!-- Блок обработки встреч -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div class="bg-white shadow rounded-2xl p-6 flex flex-col justify-between">
+            <div>
+                <h2 class="text-lg font-semibold text-gray-700 mb-3">Шаг 1: Предпросмотр протокола (AI-03)</h2>
+                <textarea id="promptInput" rows="6" class="w-full border rounded-xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 mb-4" placeholder="Введите текст расшифровки встречи..."></textarea>
+            </div>
+            <button onclick="previewAiRequest()" class="w-full bg-indigo-600 text-white py-2.5 rounded-xl font-medium hover:bg-indigo-700 transition">Сгенерировать предпросмотр</button>
+        </div>
+
+        <div class="bg-white shadow rounded-2xl p-6 flex flex-col justify-between">
+            <div>
+                <h2 class="text-lg font-semibold text-gray-700 mb-3">Ответ бэкенда / Черновик</h2>
+                <div id="responseOutput" class="bg-gray-50 border rounded-xl p-4 h-40 overflow-y-auto text-sm text-gray-700 font-mono mb-4">Здесь появится результат от сервера...</div>
+            </div>
+            <div class="flex gap-2">
+                <button onclick="confirmMeeting()" class="w-1/2 bg-green-600 text-white py-2.5 rounded-xl font-medium hover:bg-green-700 transition">Подтвердить и сохранить</button>
+                <button onclick="loadTasks()" class="w-1/2 bg-gray-200 text-gray-700 py-2.5 rounded-xl font-medium hover:bg-gray-300 transition">Задачи (GET /tasks)</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const API_URL = 'http://127.0.0.1:8081';
+    let lastPreviewData = null;
+
+    window.onload = async () => {
+        try {
+            const res = await fetch(`${API_URL}/health`).catch(() => null);
+            const statusEl = document.getElementById('status');
+            if (res && res.ok) {
+                statusEl.textContent = 'Бэкенд доступен';
+                statusEl.className = 'text-sm px-3 py-1 rounded-full bg-green-100 text-green-800';
+            } else {
+                statusEl.textContent = 'Бэкенд не отвечает';
+                statusEl.className = 'text-sm px-3 py-1 rounded-full bg-red-100 text-red-800';
+            }
+        } catch (e) {
+            console.error(e);
+        }
+    };
+
+    async function previewAiRequest() {
+        const text = document.getElementById('promptInput').value;
+        const role = document.getElementById('userRole').value;
+        const output = document.getElementById('responseOutput');
+
+        if (!text.trim()) {
+            output.textContent = 'Ошибка: введите текст расшифровки.';
+            return;
+        }
+
+        output.textContent = 'Обработка через Ollama и RAG...';
+
+        try {
+            const response = await fetch(`${API_URL}/api/meetings/preview`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    title: "Встреча от " + new Date().toLocaleDateString(),
+                    raw_text: text,
+                    user_role: role
+                })
+            });
+
+            if (!response.ok) {
+                const errText = await response.text();
+                throw new Error(`Ошибка сервера (${response.status}): ${errText}`);
+            }
+
+            const data = await response.json();
+            lastPreviewData = {
+                title: "Встреча от " + new Date().toLocaleDateString(),
+                raw_text: text,
+                protocol: data
+            };
+            output.textContent = JSON.stringify(data, null, 2);
+        } catch (error) {
+            output.textContent = 'Ошибка отправки: ' + error.message;
+        }
+    }
+
+    async function confirmMeeting() {
+        const output = document.getElementById('responseOutput');
+        if (!lastPreviewData) {
+            output.textContent = 'Сначала сгенерируйте предпросмотр (Шаг 1)!';
+            return;
+        }
+
+        output.textContent = 'Сохранение в базу данных...';
+
+        try {
+            const response = await fetch(`${API_URL}/api/meetings/confirm`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(lastPreviewData)
+            });
+
+            if (!response.ok) {
+                const errText = await response.text();
+                throw new Error(`Ошибка сервера (${response.status}): ${errText}`);
+            }
+
+            const data = await response.json();
+            output.textContent = "✅ Успешно сохранено в БД!\n\n" + JSON.stringify(data, null, 2);
+            lastPreviewData = null;
+        } catch (error) {
+            output.textContent = 'Ошибка сохранения: ' + error.message;
+        }
+    }
+
+    async function loadTasks() {
+        const output = document.getElementById('responseOutput');
+        output.textContent = 'Загрузка задач...';
+
+        try {
+            const response = await fetch(`${API_URL}/api/tasks`);
+            const data = await response.json();
+            output.textContent = JSON.stringify(data, null, 2);
+        } catch (error) {
+            output.textContent = 'Ошибка загрузки задач: ' + error.message;
+        }
+    }
+
+    async function askKnowledgeBase() {
+        const query = document.getElementById('kbQuery').value;
+        const role = document.getElementById('userRole').value;
+        const output = document.getElementById('kbOutput');
+
+        if (!query.trim()) {
+            output.textContent = 'Введите вопрос.';
+            return;
+        }
+
+        output.textContent = 'Ищем в базе знаний с учетом ваших прав...';
+
+        try {
+            const response = await fetch(`${API_URL}/api/ask`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ query: query, user_role: role })
+            });
+
+            if (!response.ok) throw new Error('Ошибка сервера');
+
+            const data = await response.json();
+
+            let sourcesText = data.sources.map(s => `📄 ${s.title} (${s.date})`).join('<br>');
+            output.innerHTML = `<strong>Ответ:</strong><br>${data.answer}<br><br><strong>Использованные источники:</strong><br>${sourcesText || 'Нет источников'}`;
+        } catch (error) {
+            output.textContent = 'Ошибка: ' + error.message;
+        }
+    }
+</script>
+</body>
+</html>

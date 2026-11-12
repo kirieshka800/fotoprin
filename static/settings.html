@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Настройки · Фотопринт AI</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap&subset=cyrillic" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body data-nav="settings" data-title="Настройки">
+<div class="app">
+<aside class="sidebar" id="sidebar"></aside>
+<div>
+<header class="topbar" id="topbar"></header>
+<main class="page">
+
+<div class="page-head">
+  <div><div class="eyebrow">Ваше рабочее пространство</div><h1>Настройки</h1><p class="page-sub">Определите, что ассистент делает сам, а что согласует с вами.</p></div>
+  <div class="head-actions"><button class="btn" id="cancel">Отменить</button><button class="btn primary" id="save">Сохранить изменения</button></div>
+</div>
+<div class="grid-main">
+  <div class="stack">
+    <section class="card" style="padding:24px 24px 8px"><h2 style="font-size:20px">Самостоятельность ассистента</h2><p class="sub" style="margin-bottom:6px">Прозрачные действия, понятные границы</p>
+      <div class="setting"><div><b>Автономный режим</b><small>Разрешить действия в выбранных ниже пределах</small></div><button class="switch" role="switch" data-key="autonomous" aria-label="Автономный режим"></button></div>
+      <div class="setting"><div><b>Создавать задачи из встреч</b><small>Назначать ответственных и сроки из договорённостей</small></div><button class="switch" role="switch" data-key="createTasks" aria-label="Создавать задачи"></button></div>
+      <div class="setting"><div><b>Отправлять напоминания</b><small>Только участникам задачи, в рабочее время</small></div><button class="switch" role="switch" data-key="sendReminders" aria-label="Отправлять напоминания"></button></div>
+      <div class="setting" style="padding:22px 0"><b>Публикация графика смен</b><span class="badge orange" id="publish-rule" style="width:266px;justify-content:flex-start;padding:0 10px"></span></div></section>
+    <section class="card" id="notifications" style="padding:24px 24px 24px"><h2 style="font-size:20px">Уведомления</h2><p class="sub" style="margin-bottom:6px">Куда отправлять задачи и напоминания</p>
+      <div class="setting"><div><b>Telegram</b><small>Бот подключён к рабочему чату</small></div><div class="right"><span class="badge green" id="tg-badge">Подключён</span><button class="switch" role="switch" data-key="telegram.enabled" aria-label="Telegram"></button></div></div>
+      <div class="setting"><div><b>Электронная почта</b><small id="email-address"></small></div><div class="right"><span class="badge green" id="mail-badge">Подключена</span><button class="switch" role="switch" data-key="email.enabled" aria-label="Электронная почта"></button></div></div>
+      <div class="setting" style="border:0;padding-bottom:12px"><div><b>Тихие часы</b><small>Не отправлять несрочные сообщения ночью</small></div><button class="switch" role="switch" data-key="quietHours.enabled" aria-label="Тихие часы"></button></div>
+      <div class="row" style="align-items:flex-end"><div class="field" style="max-width:180px"><label>Начало</label><select class="select" id="quiet-from"></select></div><div class="field" style="max-width:180px"><label>Окончание</label><select class="select" id="quiet-to"></select></div><span class="hint" style="padding-bottom:12px;flex:1;line-height:1.4">По часовому поясу<br>рабочего пространства</span></div></section>
+  </div>
+  <div class="stack">
+    <section class="card"><h2 style="font-size:20px;margin-bottom:22px">Рабочее пространство</h2>
+      <div style="display:flex;flex-direction:column;gap:18px"><div class="field"><label>Компания</label><input class="input" id="company"></div><div class="field"><label>Часовой пояс</label><select class="select" id="timezone"></select></div></div>
+      <div class="divider" style="margin:22px 0 18px"></div><b id="me-name" style="font-size:13px;font-weight:600"></b><p class="hint" style="margin-top:10px;font-size:11px">Роль: руководитель</p><p class="hint" style="margin-top:8px;font-size:11px">Доступ к управлению: полный</p></section>
+    <section class="card"><div class="card-head"><h2 style="font-size:20px">Команда</h2><span class="badge sm" id="team-count"></span></div><div id="team"></div><button class="link" id="invite" style="margin-top:12px">+ Пригласить</button></section>
+    <section class="card tint"><h3>Кто может управлять?</h3><p>Руководитель утверждает график.<br>Сотрудник видит свои задачи и смены.</p></section>
+  </div>
+</div>
+
+</main>
+</div>
+</div>
+<script src="config.js"></script>
+<script src="mock-data.js"></script>
+<script src="api.js"></script>
+<script src="ui.js"></script>
+<script>
+
+var saved = null;
+var draft = null;
+var HOURS = [];
+for (var h = 0; h < 24; h++) { HOURS.push(pad2(h) + ':00'); }
+var TIMEZONES = ['Калининград · UTC+2', 'Москва · UTC+3', 'Минск · UTC+3', 'Самара · UTC+4', 'Екатеринбург · UTC+5', 'Новосибирск · UTC+7', 'Владивосток · UTC+10'];
+
+function getByPath(object, path) { var parts = path.split('.'); var value = object; for (var i = 0; i < parts.length; i++) { value = value[parts[i]]; } return value; }
+function setByPath(object, path, value) { var parts = path.split('.'); var target = object; for (var i = 0; i < parts.length - 1; i++) { target = target[parts[i]]; } target[parts[parts.length - 1]] = value; }
+
+function paint() {
+  var switches = $all('.switch');
+  for (var i = 0; i < switches.length; i++) { switches[i].setAttribute('aria-checked', getByPath(draft, switches[i].dataset.key) ? 'true' : 'false'); }
+  $('#company').value = draft.company;
+  $('#timezone').innerHTML = optionsHtml(TIMEZONES, draft.timezone);
+  $('#quiet-from').innerHTML = optionsHtml(HOURS, draft.quietHours.from);
+  $('#quiet-to').innerHTML = optionsHtml(HOURS, draft.quietHours.to);
+  $('#quiet-from').disabled = $('#quiet-to').disabled = !draft.quietHours.enabled;
+  $('#publish-rule').textContent = draft.publishRule;
+  $('#email-address').textContent = draft.email.address;
+  $('#tg-badge').textContent = draft.telegram.connected ? 'Подключён' : 'Не подключён';
+  $('#tg-badge').className = 'badge ' + (draft.telegram.connected ? 'green' : 'orange');
+  $('#mail-badge').textContent = draft.email.connected ? 'Подключена' : 'Не подключена';
+  $('#mail-badge').className = 'badge ' + (draft.email.connected ? 'green' : 'orange');
+}
+function isDirty() { return JSON.stringify(saved) !== JSON.stringify(draft); }
+
+async function loadTeam() {
+  var people = await API.getEmployees();
+  var html = '';
+  for (var i = 0; i < people.length; i++) { html += '<div class="team-row"><div>' + esc(people[i].name) + '</div><span>' + esc(people[i].role) + '</span></div>'; }
+  $('#team').innerHTML = html;
+  $('#team-count').textContent = countText(people.length, 'человек', 'человека', 'человек');
+}
+
+document.addEventListener('DOMContentLoaded', async function () {
+  try {
+    saved = await API.getSettings();
+    draft = JSON.parse(JSON.stringify(saved));
+    paint(); loadTeam();
+    var me = await API.getMe(); $('#me-name').textContent = me.name;
+  } catch (error) { showError(error); }
+  var switches = $all('.switch');
+  for (var i = 0; i < switches.length; i++) {
+    switches[i].addEventListener('click', function (event) {
+      var key = event.currentTarget.dataset.key;
+      if ((key === 'telegram.enabled' && !draft.telegram.connected) || (key === 'email.enabled' && !draft.email.connected)) { toast('Сначала подключите канал', 'error'); return; }
+      setByPath(draft, key, !getByPath(draft, key)); paint();
+    });
+  }
+  $('#company').addEventListener('input', function (event) { draft.company = event.target.value; });
+  $('#timezone').addEventListener('change', function (event) { draft.timezone = event.target.value; paint(); });
+  $('#quiet-from').addEventListener('change', function (event) { draft.quietHours.from = event.target.value; paint(); });
+  $('#quiet-to').addEventListener('change', function (event) { draft.quietHours.to = event.target.value; paint(); });
+  $('#cancel').addEventListener('click', function () { if (!isDirty()) { return; } draft = JSON.parse(JSON.stringify(saved)); paint(); toast('Возвращены сохранённые настройки', 'info'); });
+  $('#save').addEventListener('click', async function (event) {
+    var button = event.currentTarget;
+    if (!isDirty()) { toast('Изменений нет', 'info'); return; }
+    if (!draft.company.trim()) { toast('Укажите название компании', 'error'); return; }
+    setBusy(button, true, 'Сохраняем…');
+    try { saved = await API.saveSettings(draft); draft = JSON.parse(JSON.stringify(saved)); toast('Изменения сохранены'); } catch (error) { showError(error); }
+    setBusy(button, false); paint();
+  });
+  $('#invite').addEventListener('click', function () {
+    var modal = openModal({ title: 'Пригласить в команду', narrow: true,
+      html: '<div class="field" id="i-field"><label>Электронная почта *</label><input class="input" id="i-email" type="email" placeholder="name@company.ru"><span class="field-error">Введите корректный адрес</span></div>' +
+        '<div class="field"><label>Роль</label><select class="select" id="i-role"><option>Сотрудник</option><option>Руководитель</option></select></div>' +
+        '<div class="modal-foot"><button class="btn" data-close>Отмена</button><button class="btn primary" id="i-send">Отправить приглашение</button></div>' });
+    watchFieldErrors(modal.root);
+    $('#i-send', modal.root).addEventListener('click', async function (event) {
+      var email = $('#i-email', modal.root).value.trim();
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { setFieldError($('#i-field', modal.root), 'Введите корректный адрес'); return; }
+      setBusy(event.currentTarget, true, 'Отправляем…');
+      try { await API.inviteMember(email, $('#i-role', modal.root).value); modal.close(); toast('Приглашение отправлено'); loadTeam(); } catch (error) { setBusy(event.currentTarget, false); showError(error); }
+    });
+  });
+  window.addEventListener('beforeunload', function (event) { if (saved && isDirty()) { event.preventDefault(); event.returnValue = ''; } });
+});
+
+</script>
+</body>
+</html>

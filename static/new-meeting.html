@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Новая встреча · Фотопринт AI</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap&subset=cyrillic" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body data-nav="new-meeting" data-title="Новая встреча">
+<div class="app">
+<aside class="sidebar" id="sidebar"></aside>
+<div>
+<header class="topbar" id="topbar"></header>
+<main class="page">
+
+<div class="page-head" style="margin-bottom:28px">
+  <div><div class="eyebrow"><a href="overview.html">&larr; К обзору</a></div><h1 style="margin-top:14px">Новая встреча</h1><p class="page-sub">Добавьте материалы — остальное возьмёт на себя ассистент.</p></div>
+</div>
+<div id="state-box" class="card status-card hidden"></div>
+<div class="grid-main" id="form-area">
+  <section class="card" style="padding:24px">
+    <div class="form-sec">
+      <h2><span class="sec-num">01</span>Материалы встречи</h2>
+      <div class="chips" style="margin-bottom:16px"><button class="chip active" data-mode="file">Загрузить файл</button><button class="chip" data-mode="notes">Вставить заметки</button></div>
+      <div id="file-mode">
+        <div class="dropzone" id="dropzone" tabindex="0" role="button" aria-label="Загрузить файл">
+          <svg class="i" viewBox="0 0 24 24" style="color:var(--accent);width:22px;height:22px"><path d="M12 19V5M6 11l6-6 6 6"/></svg>
+          <b>Перетащите запись или документ сюда</b><small>TXT, DOCX, PDF, MP3, WAV, OGG · до 100 МБ</small><span class="link">Выбрать файл</span>
+        </div>
+        <input type="file" id="file-input" class="hidden" accept=".txt,.docx,.pdf,.mp3,.wav,.m4a,.ogg,.oga,.opus,.webm,.aac,.flac,.mp4">
+        <div class="file-row hidden" id="file-row"><span class="ext" id="file-ext"></span><div><b id="file-title"></b><small id="file-info"></small></div>
+          <div class="state"><span><svg class="i" viewBox="0 0 24 24" style="width:16px;height:16px"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span><button class="icon-btn" id="file-remove" aria-label="Убрать файл"><svg class="i" viewBox="0 0 24 24" style="width:14px;height:14px"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div></div>
+        <p class="field-error" id="file-error" style="margin-top:8px"></p>
+      </div>
+      <div class="field hidden" id="notes-mode"><textarea class="textarea" id="notes" placeholder="Вставьте заметки или конспект встречи…" style="min-height:160px"></textarea><span class="field-error"></span></div>
+    </div>
+    <div class="divider" style="margin:24px 0"></div>
+    <div class="form-sec">
+      <h2><span class="sec-num">02</span>Информация о встрече</h2>
+      <div style="display:flex;flex-direction:column;gap:20px">
+        <div class="field" id="f-title"><label for="title">Название *</label><input class="input" id="title" placeholder="Например: Планёрка производства"><span class="field-error">Название обязательно</span></div>
+        <div class="row"><div class="field"><label for="date">Дата встречи</label><input class="input" id="date" type="date"></div><div class="field"><label for="department">Отдел</label><select class="select" id="department"></select></div></div>
+        <div class="field"><label>Участники</label><div class="multi" id="people"><button class="select" id="people-btn" style="text-align:left" type="button"></button><div class="menu hidden" id="people-menu"></div></div><span class="hint">Участники получают доступ к саммари и своим задачам.</span></div>
+      </div>
+    </div>
+    <div class="divider" style="margin:24px 0 18px"></div>
+    <div style="display:flex;justify-content:space-between;align-items:center"><span class="hint">* Обязательное поле</span><button class="btn primary lg" id="submit" style="font-size:12px">Создать саммари <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button></div>
+  </section>
+  <div class="stack">
+    <section class="card" style="padding-bottom:10px"><h2 style="font-size:20px;margin-bottom:14px">На выходе получите</h2>
+      <ul class="steps-list">
+        <li><span class="n">01</span><div><b>Короткое саммари</b><small>Главное, без повторов и воды</small></div></li>
+        <li><span class="n">02</span><div><b>Задачи с ответственными</b><small>Сроки и конкретные действия</small></div></li>
+        <li><span class="n">03</span><div><b>Предложение графика</b><small>С учётом загрузки команды</small></div></li>
+        <li><span class="n">04</span><div><b>Напоминания</b><small>В удобных для команды каналах</small></div></li>
+      </ul></section>
+    <section class="card"><h2 style="font-size:19px;margin-bottom:16px">Действия после обработки</h2>
+      <div style="display:flex;flex-direction:column;gap:18px;padding-bottom:20px">
+        <label class="check"><input type="checkbox" id="act-tasks" checked> Создать задачи</label>
+        <label class="check"><input type="checkbox" id="act-reminders" checked> Настроить напоминания</label>
+        <label class="check"><input type="checkbox" id="act-schedule" checked> Предложить график смен</label></div></section>
+    <section class="card tint"><h3>Под вашим контролем</h3><p>Материалы доступны только команде.<br>Новый график не будет опубликован<br>без подтверждения руководителя.</p></section>
+  </div>
+</div>
+
+</main>
+</div>
+</div>
+<script src="config.js"></script>
+<script src="mock-data.js"></script>
+<script src="api.js"></script>
+<script src="ui.js"></script>
+<script>
+
+var chosenFile = null;
+var employees = [];
+var selectedPeople = [];
+var lastPayload = null;
+
+function renderPeopleButton() {
+  var names = [];
+  for (var i = 0; i < employees.length; i++) { if (selectedPeople.indexOf(employees[i].id) >= 0) { names.push(employees[i].name.split(' ')[0]); } }
+  var label = names.length === 0 ? 'Выберите участников' : names.slice(0, 3).join(', ') + (names.length > 3 ? ' +' + (names.length - 3) : '');
+  $('#people-btn').textContent = label;
+}
+function renderPeopleMenu() {
+  var html = '';
+  for (var i = 0; i < employees.length; i++) {
+    html += '<label><input type="checkbox" value="' + employees[i].id + '"' + (selectedPeople.indexOf(employees[i].id) >= 0 ? ' checked' : '') + '> ' + esc(employees[i].name) + '</label>';
+  }
+  $('#people-menu').innerHTML = html;
+  var boxes = $all('input', $('#people-menu'));
+  for (var j = 0; j < boxes.length; j++) {
+    boxes[j].addEventListener('change', function (event) {
+      var id = event.target.value;
+      if (event.target.checked) { selectedPeople.push(id); } else { selectedPeople.splice(selectedPeople.indexOf(id), 1); }
+      renderPeopleButton();
+    });
+  }
+}
+function pickFile(file) {
+  var problem = validateMeetingFile(file);
+  if (problem) { $('#file-error').textContent = problem; $('#file-error').style.display = 'block'; return; }
+  $('#file-error').style.display = 'none';
+  chosenFile = file;
+  $('#file-ext').textContent = file.name.split('.').pop().toUpperCase();
+  $('#file-title').textContent = file.name;
+  $('#file-info').textContent = fileSizeText(file.size) + '  ·  готов к загрузке';
+  $('#file-row').classList.remove('hidden');
+  if (!$('#title').value) { $('#title').value = file.name.replace(/\.[^.]+$/, ''); }
+}
+function setMode(mode) {
+  var chips = $all('.chips .chip');
+  for (var i = 0; i < chips.length; i++) { chips[i].classList.toggle('active', chips[i].dataset.mode === mode); }
+  $('#file-mode').classList.toggle('hidden', mode !== 'file');
+  $('#notes-mode').classList.toggle('hidden', mode !== 'notes');
+}
+
+async function submitMeeting(payload, button) {
+  if (button) { setBusy(button, true, 'Отправляем…'); }
+  lastPayload = payload;
+  try {
+    var meeting = await API.createMeeting(payload);
+    $('#form-area').classList.add('hidden');
+    var box = $('#state-box');
+    box.classList.remove('hidden');
+    box.innerHTML = processingHtml(meeting.progress || 5);
+    watchMeeting(meeting.id, function (progress) { box.innerHTML = processingHtml(progress); },
+      function () { box.innerHTML = '<span class="badge green">Готово</span><h2>Саммари собрано</h2><p>Можно переходить к решениям и задачам.</p><div style="margin-top:24px"><a class="btn primary lg" href="meeting.html?id=' + meeting.id + '">Открыть саммари</a></div>'; },
+      function () { showFailure(box); });
+  } catch (error) {
+    if (button) { setBusy(button, false); }
+    $('#form-area').classList.add('hidden');
+    showFailure($('#state-box'), error.message);
+  }
+}
+function showFailure(box, message) {
+  box.classList.remove('hidden');
+  box.innerHTML = errorHtml(message);
+  $('#retry-upload', box).addEventListener('click', function () { submitMeeting(lastPayload, null); });
+  $('#pick-other', box).addEventListener('click', function () { box.classList.add('hidden'); $('#form-area').classList.remove('hidden'); $('#file-input').click(); });
+}
+
+document.addEventListener('DOMContentLoaded', async function () {
+  $('#date').value = isoDate(new Date());
+  try {
+    var results = await Promise.all([API.getEmployees(), API.getDepartments()]);
+    for (var q = 0; q < results[0].length; q++) { results[0][q].id = String(results[0][q].id); }
+    employees = results[0];
+    $('#department').innerHTML = optionsHtml(results[1], results[1][0]);
+    selectedPeople = employees.slice(0, 3).map(function (e) { return e.id; });
+    renderPeopleMenu(); renderPeopleButton();
+  } catch (error) { showError(error); }
+
+  var chips = $all('.chips .chip');
+  for (var i = 0; i < chips.length; i++) { chips[i].addEventListener('click', function (event) { setMode(event.currentTarget.dataset.mode); }); }
+  var zone = $('#dropzone');
+  zone.addEventListener('click', function () { $('#file-input').click(); });
+  zone.addEventListener('keydown', function (event) { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); $('#file-input').click(); } });
+  zone.addEventListener('dragover', function (event) { event.preventDefault(); zone.classList.add('drag'); });
+  zone.addEventListener('dragleave', function () { zone.classList.remove('drag'); });
+  zone.addEventListener('drop', function (event) { event.preventDefault(); zone.classList.remove('drag'); if (event.dataTransfer.files[0]) { pickFile(event.dataTransfer.files[0]); } });
+  $('#file-input').addEventListener('change', function (event) { if (event.target.files[0]) { pickFile(event.target.files[0]); } });
+  $('#file-remove').addEventListener('click', function () { chosenFile = null; $('#file-input').value = ''; $('#file-row').classList.add('hidden'); });
+  $('#people-btn').addEventListener('click', function (event) { event.stopPropagation(); $('#people-menu').classList.toggle('hidden'); });
+  document.addEventListener('click', function (event) { if (!$('#people').contains(event.target)) { $('#people-menu').classList.add('hidden'); } });
+  watchFieldErrors(document);
+
+  $('#submit').addEventListener('click', function (event) {
+    var titleInput = $('#title');
+    var notes = $('#notes').value.trim();
+    var valid = true;
+    if (!titleInput.value.trim()) { setFieldError($('#f-title'), 'Название обязательно'); valid = false; }
+    if (!chosenFile && !notes) { toast('Добавьте файл или вставьте заметки', 'error'); valid = false; }
+    if (!valid) { return; }
+    submitMeeting({
+      title: titleInput.value.trim(), date: $('#date').value, department: $('#department').value, participantIds: selectedPeople, notes: notes, file: chosenFile,
+      actions: { tasks: $('#act-tasks').checked, reminders: $('#act-reminders').checked, schedule: $('#act-schedule').checked }
+    }, event.currentTarget);
+  });
+});
+
+</script>
+</body>
+</html>

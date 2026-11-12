@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Подробности задачи · Фотопринт AI</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap&subset=cyrillic" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body data-nav="tasks" data-title="Подробности задачи">
+<div class="app">
+<aside class="sidebar" id="sidebar"></aside>
+<div>
+<header class="topbar" id="topbar"></header>
+<main class="page">
+
+<div class="page-head" style="margin-bottom:22px">
+  <div><div class="eyebrow"><a href="tasks.html">&larr; Все задачи</a><span>/</span><span id="code"></span></div><h1 id="title" style="margin-top:14px">&nbsp;</h1><p class="page-sub" id="origin" style="font-size:13px">&nbsp;</p></div>
+  <div class="head-actions"><button class="btn" id="edit">Редактировать</button><button class="btn primary" id="complete">Завершить задачу</button></div>
+</div>
+<div class="grid-main">
+  <div class="stack">
+    <section class="card" style="padding:22px 24px 26px">
+      <span id="status-badge"></span>
+      <h2 style="font-size:19px;margin:26px 0 14px">Описание</h2>
+      <p id="description" style="font-size:13px;line-height:1.35;max-width:520px"></p>
+      <div class="quote hidden" id="quote"><b id="quote-title"></b><small id="quote-text"></small></div>
+      <h3 style="margin:22px 0 4px;font-size:16px;font-weight:600">Что нужно сделать</h3>
+      <div class="checklist" id="checklist"></div>
+    </section>
+    <section class="card" style="padding:0 24px 24px">
+      <div class="tabs" style="gap:30px" id="tabs"><button class="tab active" data-tab="talk" style="font-size:17px;font-weight:600;color:var(--text);border-color:transparent">Обсуждение</button><button class="tab" data-tab="history" style="font-size:11px;padding-top:18px">История</button></div>
+      <div id="tab-talk"><div id="comments"></div>
+        <div class="comment-box"><textarea id="comment-text" placeholder="Добавить комментарий…" aria-label="Комментарий"></textarea><button class="btn primary" id="comment-send" disabled style="height:40px">Отправить</button></div></div>
+      <div id="tab-history" class="hidden"></div>
+    </section>
+  </div>
+  <div class="stack">
+    <section class="card"><h2 style="font-size:20px;margin-bottom:22px">Детали задачи</h2>
+      <div style="display:flex;flex-direction:column;gap:20px">
+        <div class="field"><label>Ответственный</label><select class="select" id="assignee"></select></div>
+        <div class="field"><label>Срок выполнения</label><input class="input" type="datetime-local" id="due"></div>
+        <div class="field"><label>Статус</label><select class="select" id="status"></select></div>
+        <div class="field"><label>Приоритет</label><select class="select" id="priority" style="width:150px"></select></div>
+      </div></section>
+    <section class="card"><h2 style="font-size:19px;margin-bottom:12px">Напоминание</h2><div id="reminder"></div></section>
+    <section class="card tint hidden" id="schedule-link"><h3>Связано с графиком</h3><p id="schedule-text"></p><a class="btn primary" href="schedule.html" style="margin-top:14px;width:100%">Открыть график <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a></section>
+  </div>
+</div>
+
+</main>
+</div>
+</div>
+<script src="config.js"></script>
+<script src="mock-data.js"></script>
+<script src="api.js"></script>
+<script src="ui.js"></script>
+<script>
+
+var task = null;
+var employees = [];
+
+async function loadTask() {
+  var id = getParam('id');
+  if (!id) { window.location.href = 'tasks.html'; return; }
+  try {
+    var results = await Promise.all([API.getTask(id), API.getEmployees()]);
+    task = results[0]; employees = results[1];
+    fill();
+  } catch (error) { $('#title').textContent = 'Задача не найдена'; showError(error); }
+}
+
+function fill() {
+  document.title = task.title + ' · Фотопринт AI';
+  $('#code').textContent = 'Задача ' + task.code;
+  $('#title').textContent = task.title;
+  var created = task.comments.length ? new Date(task.comments[0].at) : null;
+  $('#origin').textContent = 'Из встречи «' + (task.source || 'вручную') + '»' + (created ? ' · создано ' + (task.comments[0].isAi ? 'AI ' : '') + dayWord(created).toLowerCase() + ' в ' + timeText(created) : '');
+  $('#status-badge').innerHTML = statusBadge(task.status);
+  $('#description').textContent = task.description || 'Описание не добавлено.';
+  if (task.quote) { $('#quote').classList.remove('hidden'); $('#quote-title').textContent = task.quote.title; $('#quote-text').textContent = task.quote.text; }
+  $('#assignee').innerHTML = optionsHtml(employees, task.assigneeId, 'id', 'name');
+  $('#due').value = isoDate(new Date(task.due)) + 'T' + formatTime(task.due);
+  var statusItems = [];
+  for (var key in STATUS) { statusItems.push({ v: key, l: STATUS[key].label }); }
+  $('#status').innerHTML = optionsHtml(statusItems, task.status, 'v', 'l');
+  $('#priority').innerHTML = optionsHtml(['Обычный', 'Высокий', 'Срочный'], task.priority);
+  var done = task.status === 'done';
+  $('#complete').textContent = done ? 'Вернуть в работу' : 'Завершить задачу';
+  $('#complete').classList.toggle('primary', !done);
+  renderChecklist(); renderComments(); renderHistory(); renderReminder();
+  if (task.scheduleLink) { $('#schedule-link').classList.remove('hidden'); $('#schedule-text').textContent = task.scheduleLink.text; }
+}
+
+function renderChecklist() {
+  var html = '';
+  for (var i = 0; i < task.checklist.length; i++) {
+    html += '<label class="check" style="gap:12px;font-size:12px;color:var(--text-3)"><input type="checkbox" data-index="' + i + '"' + (task.checklist[i].done ? ' checked' : '') + '>' + esc(task.checklist[i].text) + '</label>';
+  }
+  if (task.checklist.length === 0) { html = '<p class="muted" style="font-size:12px">Шагов пока нет.</p>'; }
+  $('#checklist').innerHTML = html;
+}
+function renderComments() {
+  var html = '';
+  for (var i = 0; i < task.comments.length; i++) {
+    var c = task.comments[i];
+    html += '<div class="comment ' + (c.isAi ? '' : 'me') + '"><div class="head ' + (c.isAi ? 'ai' : '') + '">' + esc(c.authorName) + '<span>' + formatTime(c.at) + '</span></div><p>' + esc(c.text) + '</p></div>';
+  }
+  if (task.comments.length === 0) { html = '<p class="muted" style="font-size:12px;padding:20px 0">Комментариев пока нет — напишите первым.</p>'; }
+  $('#comments').innerHTML = html;
+}
+function renderHistory() {
+  var items = task.history || [];
+  var html = '<div style="padding-top:12px">';
+  for (var i = items.length - 1; i >= 0; i--) { html += '<div class="comment"><div class="head">' + esc(items[i].text) + '<span>' + esc(formatDateTime(items[i].at)) + '</span></div></div>'; }
+  if (items.length === 0) { html += '<p class="muted" style="font-size:12px;padding:20px 0">История изменений пока пуста.</p>'; }
+  $('#tab-history').innerHTML = html + '</div>';
+}
+function renderReminder() {
+  if (task.reminder) {
+    $('#reminder').innerHTML = '<div style="font-size:19px;font-weight:600;color:var(--accent)">' + esc(formatDateTime(task.reminder.at)) + '</div><p class="hint" style="margin:12px 0">' + esc(task.reminder.text) + '</p><button class="link" id="change-reminder">Изменить время ' + icon('right') + '</button>';
+  } else {
+    $('#reminder').innerHTML = '<p class="muted" style="font-size:12px;margin-bottom:12px">Напоминание не настроено.</p><button class="link" id="change-reminder">Настроить ' + icon('right') + '</button>';
+  }
+  $('#change-reminder').addEventListener('click', function () { openReminderModal(task, function (saved) { task = saved; fill(); }); });
+}
+
+async function save(fields, message) {
+  try { task = await API.updateTask(task.id, fields); fill(); if (message) { toast(message); } }
+  catch (error) { showError(error); fill(); }
+}
+
+document.addEventListener('DOMContentLoaded', function () {
+  loadTask();
+  $('#assignee').addEventListener('change', function (event) { save({ assigneeId: event.target.value }, 'Ответственный изменён'); });
+  $('#status').addEventListener('change', function (event) { save({ status: event.target.value }, 'Статус обновлён'); });
+  $('#priority').addEventListener('change', function (event) { save({ priority: event.target.value }, 'Приоритет обновлён'); });
+  $('#due').addEventListener('change', function (event) { if (event.target.value) { save({ due: new Date(event.target.value).toISOString() }, 'Срок обновлён'); } });
+  $('#complete').addEventListener('click', function () { save({ status: task.status === 'done' ? 'in_progress' : 'done' }, task.status === 'done' ? 'Задача снова в работе' : 'Задача завершена'); });
+  $('#edit').addEventListener('click', function () { openTaskModal(employees, task, function (saved) { task = saved; fill(); }); });
+  $('#checklist').addEventListener('change', function (event) {
+    var box = event.target.closest('[data-index]');
+    if (!box) { return; }
+    var list = task.checklist;
+    list[parseInt(box.dataset.index, 10)].done = box.checked;
+    save({ checklist: list });
+  });
+  var tabs = $all('#tabs .tab');
+  for (var i = 0; i < tabs.length; i++) {
+    tabs[i].addEventListener('click', function (event) {
+      var name = event.currentTarget.dataset.tab;
+      for (var j = 0; j < tabs.length; j++) {
+        var active = tabs[j].dataset.tab === name;
+        tabs[j].style.fontSize = active ? '17px' : '11px'; tabs[j].style.fontWeight = active ? '600' : '500'; tabs[j].style.color = active ? 'var(--text)' : 'var(--text-2)';
+        tabs[j].style.paddingTop = active ? '' : '18px';
+        $('#tab-' + tabs[j].dataset.tab).classList.toggle('hidden', !active);
+      }
+    });
+  }
+  var text = $('#comment-text'), send = $('#comment-send');
+  text.addEventListener('input', function () { send.disabled = text.value.trim() === ''; });
+  send.addEventListener('click', async function () {
+    var value = text.value.trim();
+    if (!value) { return; }
+    setBusy(send, true, 'Отправляем…');
+    try { var comment = await API.addComment(task.id, value); task.comments.push(comment); text.value = ''; renderComments(); }
+    catch (error) { showError(error); }
+    setBusy(send, false); send.disabled = true;
+  });
+  text.addEventListener('keydown', function (event) { if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) { send.click(); } });
+});
+
+</script>
+</body>
+</html>

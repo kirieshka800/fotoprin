@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Обзор · Фотопринт AI</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap&subset=cyrillic" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body data-nav="overview" data-title="Обзор">
+<div class="app">
+<aside class="sidebar" id="sidebar"></aside>
+<div>
+<header class="topbar" id="topbar"></header>
+<main class="page">
+
+<div class="page-head">
+  <div><div class="eyebrow" id="today-date">&nbsp;</div><h1 id="greeting">&nbsp;</h1><p class="page-sub">Превратим разговоры в понятный план работы.</p></div>
+  <span class="status-pill">Ассистент на связи</span>
+</div>
+<section class="grid-3" id="stats" aria-label="Показатели">
+  <div class="card stat"><small>Встреч за неделю</small><div class="row"><b id="stat-meetings">–</b><span id="stat-meetings-note"></span></div></div>
+  <div class="card stat"><small>Задач в работе</small><div class="row"><b id="stat-tasks">–</b><span class="warn" id="stat-tasks-note"></span></div></div>
+  <div class="card stat"><small>Сэкономлено времени</small><div class="row"><b id="stat-saved">–</b><span>на заметках и планировании</span></div></div>
+</section>
+<div class="grid-main" style="margin-top:24px">
+  <div class="stack">
+    <section class="card composer">
+      <h2 style="font-size:22px">С чего начнём?</h2>
+      <p class="muted" style="font-size:12px;margin-top:8px">Загрузите запись встречи или просто вставьте заметки.</p>
+      <div class="tabs-row" role="tablist">
+        <button class="chip active" role="tab" data-mode="notes">Вставить заметки</button>
+        <button class="chip" role="tab" data-mode="file">Загрузить файл</button>
+      </div>
+      <div class="field" id="notes-field">
+        <textarea class="textarea" id="notes" aria-label="Заметки со встречи" placeholder="О чём договорились на встрече? Например: обсудили загрузку печатного цеха на следующую неделю…" style="min-height:106px"></textarea>
+        <span class="field-error"></span>
+      </div>
+      <div class="dropzone hidden" id="file-zone" tabindex="0" role="button">
+        <b>Перетащите файл сюда или нажмите, чтобы выбрать</b><small>TXT, DOCX, PDF, MP3, WAV, OGG · до 100 МБ</small>
+      </div>
+      <p class="meta">TXT, DOCX, PDF, MP3, WAV, OGG &nbsp;·&nbsp; до 100 МБ <span id="file-name" style="color:var(--accent);margin-left:8px"></span></p>
+      <div class="actions">
+        <button class="btn" id="attach">Прикрепить файл</button>
+        <button class="btn primary lg" id="create">Создать саммари <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
+      </div>
+      <input type="file" id="file-input" class="hidden" accept=".txt,.docx,.pdf,.mp3,.wav,.m4a,.ogg,.oga,.opus,.webm,.aac,.flac,.mp4">
+    </section>
+    <section class="card">
+      <div class="card-head"><h2>Последние встречи</h2><a class="link" href="meetings.html">Все саммари <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a></div>
+      <div id="recent"><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div></div>
+    </section>
+  </div>
+  <div class="stack">
+    <section class="card">
+      <h2 style="font-size:18px">Пока вы были заняты</h2>
+      <p class="sub" style="margin-bottom:10px">Ассистент уже позаботился об этом</p>
+      <div id="activity"><div class="skeleton"></div><div class="skeleton"></div></div>
+      <div class="divider" style="margin-top:30px"></div>
+      <a class="link" href="notifications.html">Вся история действий <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
+    </section>
+    <section class="card tint" style="padding:26px 20px">
+      <h2 style="font-size:23px;line-height:28px;color:var(--accent-dark);font-weight:600">Меньше рутины.<br>Больше фокуса.</h2>
+      <p>Я нахожу договорённости, назначаю задачи<br>и напоминаю о важном. Вы — управляете.</p>
+      <div class="setting" style="border:0;padding:22px 0 8px"><b style="color:var(--accent-dark);font-weight:600">Автономный режим</b><button class="switch" role="switch" id="autonomous" aria-checked="false" aria-label="Автономный режим"></button></div>
+      <small style="font-size:10px;color:#6d5b92">Графики — только с вашим подтверждением</small>
+    </section>
+  </div>
+</div>
+
+</main>
+</div>
+</div>
+<script src="config.js"></script>
+<script src="mock-data.js"></script>
+<script src="api.js"></script>
+<script src="ui.js"></script>
+<script>
+
+var attachedFile = null;
+var mode = 'notes';
+
+function greetingText(name) {
+  var hour = new Date().getHours();
+  var word = hour < 5 ? 'Доброй ночи' : hour < 12 ? 'Доброе утро' : hour < 18 ? 'Добрый день' : 'Добрый вечер';
+  return word + ', ' + name;
+}
+
+async function loadOverview() {
+  var now = new Date();
+  $('#today-date').textContent = WEEKDAYS_FULL[now.getDay()] + ', ' + now.getDate() + ' ' + MONTHS_FULL[now.getMonth()];
+  try {
+    var results = await Promise.all([API.getMe(), API.getStats(), API.getActivity(), API.getMeetings({ limit: 3 }), API.getSettings()]);
+    var me = results[0], stats = results[1], activity = results[2], meetings = results[3], settings = results[4];
+    $('#greeting').textContent = greetingText(me.name.split(' ')[0]);
+    $('#stat-meetings').textContent = pad2(stats.meetingsWeek);
+    $('#stat-meetings-note').textContent = (stats.meetingsDelta >= 0 ? '+' : '') + stats.meetingsDelta + ' к прошлой неделе';
+    $('#stat-tasks').textContent = stats.tasksActive;
+    $('#stat-tasks-note').textContent = stats.tasksAttention + ' ' + plural(stats.tasksAttention, 'требует', 'требуют', 'требуют') + ' внимания';
+    $('#stat-saved').textContent = String(stats.savedHours).replace('.', ',') + ' ч';
+    renderActivity(activity);
+    renderRecent(meetings.items);
+    $('#autonomous').setAttribute('aria-checked', settings.autonomous ? 'true' : 'false');
+  } catch (error) { showError(error); }
+}
+var WEEKDAYS_FULL = ['Воскресенье', 'Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота'];
+
+function renderActivity(items) {
+  var box = $('#activity');
+  if (items.length === 0) { box.innerHTML = '<p class="muted" style="font-size:12px;padding:16px 0">Пока ничего не происходило.</p>'; return; }
+  var icons = { task: 'check', reminder: 'right', schedule: 'refresh' };
+  var classes = { task: '', reminder: '', schedule: 'purple' };
+  var html = '';
+  for (var i = 0; i < items.length; i++) {
+    var item = items[i];
+    html += '<div class="item"><span class="ico-box ' + classes[item.kind] + '">' + icon(icons[item.kind] || 'check') + '</span><div><b>' + esc(item.title) + '</b><small style="font-size:10px">' + esc(item.text) + '</small><small>' + formatTime(item.at) + '</small></div></div>';
+  }
+  box.innerHTML = html;
+}
+
+function renderRecent(items) {
+  var box = $('#recent');
+  if (items.length === 0) { box.innerHTML = '<div class="empty"><h3>Встреч пока нет</h3><p>Загрузите первую запись или заметки — ассистент соберёт саммари.</p></div>'; return; }
+  var html = '';
+  for (var i = 0; i < items.length; i++) {
+    var meeting = items[i];
+    html += '<a class="meeting-row" href="meeting.html?id=' + meeting.id + '"><span class="ico-box gray">' + icon('menu') + '</span>' +
+      '<div><span class="t-title">' + esc(meeting.title) + '</span><small>' + esc(meetingMetaText(meeting)) + '</small></div>' +
+      '<span class="badge">' + (meeting.status === 'processing' ? 'Обработка' : countText(meeting.tasksCount, 'задача', 'задачи', 'задач')) + '</span></a>';
+  }
+  box.innerHTML = html;
+}
+
+function setMode(newMode) {
+  mode = newMode;
+  var chips = $all('.tabs-row .chip');
+  for (var i = 0; i < chips.length; i++) { chips[i].classList.toggle('active', chips[i].dataset.mode === mode); }
+  $('#notes-field').classList.toggle('hidden', mode !== 'notes');
+  $('#file-zone').classList.toggle('hidden', mode !== 'file');
+}
+function setFile(file) {
+  var problem = validateMeetingFile(file);
+  if (problem) { toast(problem, 'error'); return; }
+  attachedFile = file;
+  $('#file-name').textContent = file.name + ' (' + fileSizeText(file.size) + ')';
+}
+
+function bindOverview() {
+  var chips = $all('.tabs-row .chip');
+  for (var i = 0; i < chips.length; i++) { chips[i].addEventListener('click', function (event) { setMode(event.currentTarget.dataset.mode); }); }
+  $('#attach').addEventListener('click', function () { $('#file-input').click(); });
+  $('#file-zone').addEventListener('click', function () { $('#file-input').click(); });
+  $('#file-input').addEventListener('change', function (event) { if (event.target.files[0]) { setFile(event.target.files[0]); } });
+  watchFieldErrors(document);
+  $('#create').addEventListener('click', async function (event) {
+    var button = event.currentTarget;
+    var notes = $('#notes').value.trim();
+    if (!notes && !attachedFile) {
+      if (mode === 'notes') { setFieldError($('#notes-field'), 'Добавьте заметки или прикрепите файл'); } else { toast('Прикрепите файл или вставьте заметки', 'error'); }
+      return;
+    }
+    setBusy(button, true, 'Создаём…');
+    try {
+      var title = attachedFile ? attachedFile.name.replace(/\.[^.]+$/, '') : notes.split('\n')[0].slice(0, 60);
+      var meeting = await API.createMeeting({ title: title, notes: notes, file: attachedFile, date: new Date().toISOString(), participantIds: [], actions: { tasks: true, reminders: true, schedule: true } });
+      window.location.href = 'meeting.html?id=' + meeting.id;
+    } catch (error) { setBusy(button, false); showError(error); }
+  });
+  $('#autonomous').addEventListener('click', async function (event) {
+    var button = event.currentTarget;
+    var newValue = button.getAttribute('aria-checked') !== 'true';
+    button.setAttribute('aria-checked', newValue ? 'true' : 'false');
+    try {
+      var settings = await API.getSettings();
+      settings.autonomous = newValue;
+      await API.saveSettings(settings);
+      toast(newValue ? 'Автономный режим включён' : 'Автономный режим выключен');
+    } catch (error) { button.setAttribute('aria-checked', newValue ? 'false' : 'true'); showError(error); }
+  });
+}
+document.addEventListener('DOMContentLoaded', function () { bindOverview(); loadOverview(); });
+
+</script>
+</body>
+</html>

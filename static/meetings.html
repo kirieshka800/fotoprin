@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Саммари встреч · Фотопринт AI</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap&subset=cyrillic" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body data-nav="meetings" data-title="Саммари встреч">
+<div class="app">
+<aside class="sidebar" id="sidebar"></aside>
+<div>
+<header class="topbar" id="topbar"></header>
+<main class="page">
+
+<div class="page-head">
+  <div><div class="eyebrow">Общая память команды</div><h1>Саммари встреч</h1><p class="page-sub">Все решения, договорённости и записи — в одном месте.</p></div>
+  <div class="head-actions"><a class="btn primary lg" href="new-meeting.html" style="height:40px;font-size:12px">+ Новая встреча</a></div>
+</div>
+<div class="row" style="align-items:center;margin-bottom:24px;flex-wrap:wrap">
+  <input class="input white" id="search" style="flex:1;min-width:220px;max-width:430px;height:42px" placeholder="Найти по названию или содержанию…" aria-label="Поиск по встречам">
+  <select class="select white" id="department" style="width:172px;flex:none" aria-label="Отдел"></select>
+  <select class="select white" id="period" style="width:164px;flex:none" aria-label="Период">
+    <option value="week">За неделю</option><option value="month">За месяц</option><option value="all">За всё время</option>
+  </select>
+  <div class="chips" style="margin-left:auto"><button class="chip active" data-status="">Все</button><button class="chip" data-status="ready">Готовые</button><button class="chip" id="more-chip">Ещё ⌄</button></div>
+</div>
+<div class="grid-2" id="list"><div class="card skeleton" style="height:200px"></div><div class="card skeleton" style="height:200px"></div></div>
+<div id="empty" class="card hidden"><div class="empty"><h2>Пока ничего не нашлось</h2><p>Попробуйте другое название или сбросьте фильтры.</p><button class="btn primary lg" id="reset">Сбросить фильтры</button><p class="hint" style="margin-top:22px">Поисковый запрос остаётся в строке до сброса.</p></div></div>
+<div class="row" style="justify-content:space-between;align-items:center;margin-top:24px" id="footer-row">
+  <span class="hint" id="shown" style="font-size:11px"></span><button class="btn" id="more" style="height:40px">Показать ещё</button>
+</div>
+
+</main>
+</div>
+</div>
+<script src="config.js"></script>
+<script src="mock-data.js"></script>
+<script src="api.js"></script>
+<script src="ui.js"></script>
+<script>
+
+var PAGE_SIZE = 6;
+var visibleCount = PAGE_SIZE;
+var statusFilter = '';
+var allMeetings = [];
+
+async function loadDepartments() {
+  var departments = await API.getDepartments();
+  $('#department').innerHTML = '<option value="">Все отделы</option>' + optionsHtml(departments, '');
+}
+
+/* Фильтры (поиск, отдел, период) отправляются на сервер; статус и порядок показа — на странице. */
+async function loadMeetings() {
+  try {
+    var data = await API.getMeetings({ search: $('#search').value.trim(), department: $('#department').value, period: $('#period').value });
+    allMeetings = data.items;
+    render();
+  } catch (error) { showError(error); }
+}
+
+function render() {
+  var ready = 0, processing = 0, filtered = [];
+  for (var i = 0; i < allMeetings.length; i++) {
+    if (allMeetings[i].status === 'ready') { ready++; } else { processing++; }
+    if (!statusFilter || allMeetings[i].status === statusFilter) { filtered.push(allMeetings[i]); }
+  }
+  var chips = $all('.chips .chip[data-status]');
+  chips[0].textContent = 'Все · ' + allMeetings.length;
+  chips[1].textContent = 'Готовые · ' + ready;
+  $('#more-chip').textContent = (statusFilter === 'processing' ? 'В обработке · ' + processing : 'Ещё') + ' ⌄';
+  $('#more-chip').classList.toggle('active', statusFilter === 'processing');
+  for (var c = 0; c < chips.length; c++) { chips[c].classList.toggle('active', chips[c].dataset.status === statusFilter); }
+
+  var shown = filtered.slice(0, visibleCount);
+  var html = '';
+  for (var j = 0; j < shown.length; j++) { html += cardHtml(shown[j]); }
+  $('#list').innerHTML = html;
+  $('#list').classList.toggle('hidden', filtered.length === 0);
+  $('#empty').classList.toggle('hidden', filtered.length !== 0);
+  $('#footer-row').classList.toggle('hidden', filtered.length === 0);
+  $('#shown').textContent = 'Показано ' + shown.length + ' из ' + filtered.length + ' встреч';
+  var rest = filtered.length - shown.length;
+  $('#more').classList.toggle('hidden', rest <= 0);
+  $('#more').textContent = 'Показать ещё ' + Math.min(rest, PAGE_SIZE);
+}
+
+function cardHtml(meeting) {
+  var foot;
+  if (meeting.status === 'processing') {
+    foot = '<div class="foot" style="gap:16px"><div class="progress" style="flex:1"><i style="width:' + meeting.progress + '%"></i></div><span style="color:var(--accent);font-weight:500">' + meeting.progress + '%</span><button class="icon-btn" data-menu="' + meeting.id + '" aria-label="Действия">' + icon('more', 18) + '</button></div>';
+  } else {
+    foot = '<div class="foot"><span>' + countText(meeting.tasksCount, 'задача', 'задачи', 'задач') + '</span><span class="link">Открыть саммари ' + icon('right') + '</span></div>';
+  }
+  return '<article class="card m-card link-row" data-id="' + meeting.id + '"><div class="top"><span>' + esc(meeting.department) + '</span>' + meetingStatusBadge(meeting) + '</div>' +
+    '<h3 class="t-title">' + esc(meeting.title) + '</h3><div class="meta">' + esc(meetingMetaText(meeting)) + '</div><p>' + esc(meeting.description) + '</p>' + foot + '</article>';
+}
+
+function resetFilters() {
+  $('#search').value = ''; $('#department').value = ''; $('#period').value = 'week'; statusFilter = ''; visibleCount = PAGE_SIZE;
+  loadMeetings();
+}
+
+document.addEventListener('DOMContentLoaded', async function () {
+  await loadDepartments();
+  loadMeetings();
+  $('#search').addEventListener('input', debounce(function () { visibleCount = PAGE_SIZE; loadMeetings(); }, 300));
+  $('#department').addEventListener('change', function () { visibleCount = PAGE_SIZE; loadMeetings(); });
+  $('#period').addEventListener('change', function () { visibleCount = PAGE_SIZE; loadMeetings(); });
+  $('#reset').addEventListener('click', resetFilters);
+  $('#more').addEventListener('click', function () { visibleCount += PAGE_SIZE; render(); });
+  var chips = $all('.chips .chip[data-status]');
+  for (var i = 0; i < chips.length; i++) {
+    chips[i].addEventListener('click', function (event) { statusFilter = event.currentTarget.dataset.status; visibleCount = PAGE_SIZE; render(); });
+  }
+  $('#more-chip').addEventListener('click', function (event) {
+    event.stopPropagation();
+    attachMenu(event.currentTarget, [{ value: 'processing', label: 'В обработке' }, { value: '', label: 'Показать все' }], function (value) { statusFilter = value; visibleCount = PAGE_SIZE; render(); });
+  });
+  $('#list').addEventListener('click', function (event) {
+    var menuButton = event.target.closest('[data-menu]');
+    if (menuButton) {
+      event.preventDefault(); event.stopPropagation();
+      var id = menuButton.dataset.menu;
+      attachMenu(menuButton, [{ value: 'open', label: 'Открыть' }, { value: 'delete', label: 'Удалить', danger: true }], async function (value) {
+        if (value === 'open') { window.location.href = 'meeting.html?id=' + id; }
+        if (value === 'delete') {
+          try { await API.deleteMeeting(id); toast('Встреча удалена'); loadMeetings(); } catch (error) { showError(error); }
+        }
+      });
+      return;
+    }
+    var card = event.target.closest('.m-card');
+    if (card) { window.location.href = 'meeting.html?id=' + card.dataset.id; }
+  });
+  setInterval(function () { var hasProcessing = false; for (var k = 0; k < allMeetings.length; k++) { if (allMeetings[k].status === 'processing') { hasProcessing = true; } } if (hasProcessing) { loadMeetings(); } }, 4000);
+});
+
+</script>
+</body>
+</html>
