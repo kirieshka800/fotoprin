@@ -285,4 +285,24 @@ class AssistantTests(unittest.TestCase):
         self.assertEqual(status,502,r)
         self.assertEqual(req(self.c,'GET',f'/assistant/dialogs/{d["id"]}')[1]['messages'],[])
 
+    def test_21_schedule_request_cannot_become_read_notifications(self):
+        _,e=req(self.c,'POST','/employees',{'name':f'График {time.time_ns()}','position':'Печатник','department':'Производство'})
+        _,d=req(self.c,'POST','/assistant/dialogs',{})
+        wrong={'answer':'Подготовил предложение','actions':[{'type':'read_all_notifications'}]*4}
+        correct={'answer':'График готов','actions':[{'type':'plan_shifts','shifts':[{'employeeId':e['id'],'date':'2027-07-05','time':'09:00-18:00','note':''}]}]}
+        data=json.dumps({'_sequence':[wrong,correct]}).encode()
+        urllib.request.urlopen(urllib.request.Request(MODEL+'/next',data=data,headers={'Content-Type':'application/json'})).read()
+        status,m=req(self.c,'POST',f'/assistant/dialogs/{d["id"]}/messages',{'text':'Создай расписание на 5 июля с 9 до 18'})
+        self.assertEqual(status,200,m)
+        self.assertEqual([p['kind'] for p in m['proposals']],['plan_shifts'])
+        payload=json.load(urllib.request.urlopen(MODEL+'/last'))
+        self.assertEqual(payload['format']['properties']['actions']['items']['properties']['type']['const'],'plan_shifts')
+
+    def test_22_unrelated_model_actions_are_rejected_after_retry(self):
+        _,d=req(self.c,'POST','/assistant/dialogs',{})
+        model([{'type':'read_all_notifications'}])
+        status,r=req(self.c,'POST',f'/assistant/dialogs/{d["id"]}/messages',{'text':'Составь график с 9 до 18'})
+        self.assertEqual(status,502,r)
+        self.assertEqual(req(self.c,'GET',f'/assistant/dialogs/{d["id"]}')[1]['messages'],[])
+
 if __name__=='__main__': unittest.main(verbosity=2)

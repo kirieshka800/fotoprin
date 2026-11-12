@@ -120,6 +120,36 @@ struct Plan {
     #[serde(default, rename = "openSections")]
     open_sections: Vec<String>,
 }
+// Narrow the grammar for explicit schedule creation. Otherwise a small model
+// can satisfy a large union using an unrelated action with no required fields.
+fn schedule_planning_request(input: &str) -> bool {
+    let text = input.to_lowercase();
+    !text.contains("задач")
+        && ["расписан", "график", "смен"]
+            .iter()
+            .any(|s| text.contains(s))
+        && ["созда", "состав", "сдела", "запланир"]
+            .iter()
+            .any(|s| text.contains(s))
+}
+fn schedule_action_schema() -> Value {
+    let mut schema = actions::schema()["oneOf"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|v| v["properties"]["type"]["const"] == "plan_shifts")
+        .unwrap()
+        .clone();
+    schema["properties"]["shifts"]["minItems"] = json!(1);
+    schema
+}
+fn wrong_schedule_actions(schedule: bool, plan: &Plan) -> bool {
+    schedule
+        && plan
+            .actions
+            .iter()
+            .any(|a| !matches!(a, Action::PlanShifts { .. }))
+}
 // Do not let a prose-only answer advertise a non-existent confirmation card.
 fn promises_proposal(answer: &str) -> bool {
     let answer = answer.to_lowercase();
@@ -326,18 +356,28 @@ openSections — список нужных пользователю раздел
         input = json!(input)
     );
     let mut schema = json!({"type":"object","properties":{"answer":{"type":"string"},"actions":{"type":"array","maxItems":5,"items":actions::schema()},"openSections":{"type":"array","items":{"enum":["overview","tasks","schedule","meetings","new_meeting","notifications","settings"]}}},"required":["answer","actions"],"additionalProperties":false});
+    let schedule_request = schedule_planning_request(input);
+    if schedule_request {
+        schema["properties"]["actions"]["items"] = schedule_action_schema();
+        schema["properties"]["actions"]["maxItems"] = json!(1);
+    }
     let raw = crate::ai::generate_json(prompt.clone(), schema.clone())
         .await
         .map_err(|e| model_error(format!("Ассистент недоступен: {e}")))?;
     let mut plan:Plan=serde_json::from_value(raw).map_err(|_|model_error("Модель вернула неподдерживаемое действие или неверные параметры. Попробуйте уточнить запрос."))?;
-    if plan.actions.is_empty() && promises_proposal(&plan.answer) {
+    if (plan.actions.is_empty() && promises_proposal(&plan.answer))
+        || wrong_schedule_actions(schedule_request, &plan)
+    {
         schema["properties"]["actions"]["minItems"] = json!(1);
-        let repair=format!("{prompt}\nИСПРАВЛЕНИЕ ФОРМАТА: предыдущий ответ обещал готовое предложение, но не содержал действий. На основе запроса и истории сформируй конкретные действия. actions НЕ МОЖЕТ быть пустым. Сохрани точные даты, сотрудника и время пользователя. Не добавляй обед или перерывы. Ответ должен содержать настоящий plan_shifts для графика или другое соответствующее действие.");
+        let repair=format!("{prompt}\nИСПРАВЛЕНИЕ ФОРМАТА: предыдущий ответ не содержал нужных действий или подменил их посторонними. Если пользователь просит график, запрещено читать уведомления, менять задачи и выполнять любые другие операции: верни ТОЛЬКО plan_shifts со сменами. На основе запроса и истории сформируй конкретные действия. actions НЕ МОЖЕТ быть пустым. Сохрани точные даты, сотрудника и время пользователя. Не добавляй обед или перерывы. Ответ должен содержать настоящий plan_shifts для графика или другое соответствующее действие.");
         let raw = crate::ai::generate_json(repair, schema)
             .await
             .map_err(|e| model_error(format!("Не удалось подготовить карточку действия: {e}")))?;
         plan = serde_json::from_value(raw)
             .map_err(|_| model_error("Модель не смогла подготовить параметры действия"))?;
+        if wrong_schedule_actions(schedule_request, &plan) {
+            return Err(model_error("Модель вернула действие, не соответствующее запросу графика. Посторонние действия не сохранены. Повторите запрос."));
+        }
         if plan.actions.is_empty() {
             return Err(model_error("Модель описала предложение, но не сформировала действия. Карточка не создана и данные не изменены. Уточните запрос или повторите попытку."));
         }

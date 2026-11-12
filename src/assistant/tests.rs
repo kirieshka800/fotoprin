@@ -79,3 +79,18 @@ fn empty_confirmation_promise_requires_repair() {
         "В понедельник работают два сотрудника."
     ));
 }
+
+#[test]
+fn scheduling_requests_only_allow_shift_plans() {
+    assert!(super::schedule_planning_request(
+        "Привет, создай мне расписание с 16.11 по 20.11 с 9 до 18"
+    ));
+    assert!(super::schedule_planning_request("Составь график на неделю"));
+    assert!(!super::schedule_planning_request("Покажи график"));
+    assert!(!super::schedule_planning_request(
+        "Создай задачу составить график"
+    ));
+    let schema = super::schedule_action_schema();
+    assert_eq!(schema["properties"]["type"]["const"], "plan_shifts");
+    assert_eq!(schema["properties"]["shifts"]["minItems"], 1);
+}
